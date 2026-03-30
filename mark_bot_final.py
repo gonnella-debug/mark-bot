@@ -68,6 +68,15 @@ GDRIVE_FOLDER_ID        = os.getenv("GDRIVE_FOLDER_ID", "1QoloKwEVPojBMfkTcSkbRL
 GDRIVE_LISTR_REF_ID     = os.getenv("GDRIVE_LISTR_REF_ID", "1C7axRZjVVxP9TjCzGVxdRHdfICYieT1L")
 GDRIVE_NUCASSA_REF_ID   = os.getenv("GDRIVE_NUCASSA_REF_ID", "10REvNFPKlF42_6HuuSRf7iBHf8CKAfWU")
 
+# Google Drive — Mark Marketing folder (approved content saved here)
+GDRIVE_MARKETING_FOLDER_ID = "1CJQsPFZqDuOTNkMWLx5C191uyo9bT_fj"
+GDRIVE_MARKETING_BRAND_FOLDERS = {
+    "nucassa_re": "1h9-rHbwy_u781I5JK9AfC9Ig4UGgJ9lV",
+    "nucassa_holdings": "1jZXVpp4zxKD4my1CU2NBEerlH81iNpJ2",
+    "listr": "1DTSCTvgN_nMR9Wn71vzGHphF8QKXfZbM",
+}
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+
 # Instagram Account IDs (from Meta Business Manager)
 IG_NUCASSA_RE       = "17841457839005074"   # @nucassadubai
 IG_HOLDINGS         = "17841406888818689"   # @nucassaholdings_ltd
@@ -114,7 +123,7 @@ BRANDS = {
             "Life in Dubai — cost of living vs quality of living",
         ],
         "posting_weekdays": [0, 2, 4],  # Mon Wed Fri
-        "post_hour_utc": 9,              # 1pm Dubai
+        "post_hour_utc": 14,             # 6pm Dubai
     },
     "nucassa_holdings": {
         "name": "Nucassa Holdings Ltd",
@@ -149,7 +158,7 @@ BRANDS = {
             "Why $1M minimum creates a better investor community",
         ],
         "posting_weekdays": [0, 2, 4],  # Mon Wed Fri
-        "post_hour_utc": 11,             # 3pm Dubai
+        "post_hour_utc": 14,             # 6pm Dubai
     },
     "listr": {
         "name": "ListR.ae",
@@ -184,7 +193,7 @@ BRANDS = {
             "ListR.ae — what we built and why",
         ],
         "posting_weekdays": [1, 3, 5],  # Tue Thu Sat
-        "post_hour_utc": 10,             # 2pm Dubai
+        "post_hour_utc": 14,             # 6pm Dubai
     },
 }
 
@@ -1039,6 +1048,16 @@ async def post_content(content: dict, brand: str) -> dict:
         else:
             results["linkedin"] = {"error": "No image to post to LinkedIn"}
 
+    # Save approved content to Google Drive Mark Marketing folder
+    if images:
+        cap_text = f"Instagram:\n{ig_caption}\n\nLinkedIn:\n{cap_li}" if cap_li else ig_caption
+        drive_ok = await save_to_drive(brand, images, cap_text, ct)
+        results["drive_saved"] = drive_ok
+        if drive_ok:
+            log.info(f"Saved {brand} content to Mark Marketing Drive folder")
+        else:
+            log.warning(f"Failed to save {brand} content to Drive")
+
     log.info(f"Post results for {brand}: {results}")
     return results
 
@@ -1121,6 +1140,114 @@ async def fetch_pdf_b64(file_id: str) -> str | None:
     except Exception as e:
         log.error(f"Drive fetch error: {e}")
     return None
+
+
+# ── GOOGLE DRIVE UPLOAD (Service Account) ────────────────────────────────────
+
+_drive_token_cache: dict = {"token": None, "expires": 0}
+
+async def _get_drive_upload_token() -> str | None:
+    """Get an OAuth2 token from the service account for Drive uploads."""
+    if not GOOGLE_SERVICE_ACCOUNT_JSON:
+        log.warning("GOOGLE_SERVICE_ACCOUNT_JSON not set — cannot upload to Drive")
+        return None
+    now = int(time.time())
+    if _drive_token_cache["token"] and _drive_token_cache["expires"] > now + 60:
+        return _drive_token_cache["token"]
+    try:
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
+        sa = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
+        header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "typ": "JWT"}).encode()).rstrip(b"=")
+        claims = {
+            "iss": sa["client_email"],
+            "scope": "https://www.googleapis.com/auth/drive.file",
+            "aud": sa["token_uri"],
+            "iat": now,
+            "exp": now + 3600,
+        }
+        payload_b = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=")
+        signing_input = header + b"." + payload_b
+        key = serialization.load_pem_private_key(sa["private_key"].encode(), password=None)
+        sig = key.sign(signing_input, asym_padding.PKCS1v15(), hashes.SHA256())
+        signature = base64.urlsafe_b64encode(sig).rstrip(b"=")
+        jwt_token = (signing_input + b"." + signature).decode()
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(sa["token_uri"], data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "assertion": jwt_token,
+            })
+            tok = r.json()
+            _drive_token_cache["token"] = tok["access_token"]
+            _drive_token_cache["expires"] = now + tok.get("expires_in", 3600)
+            return _drive_token_cache["token"]
+    except Exception as e:
+        log.error(f"Drive service account auth error: {e}")
+        return None
+
+
+async def save_to_drive(brand: str, images: list[bytes], caption: str, content_type: str = "carousel") -> bool:
+    """Save rendered images + caption to the brand's Mark Marketing subfolder."""
+    token = await _get_drive_upload_token()
+    if not token:
+        return False
+    folder_id = GDRIVE_MARKETING_BRAND_FOLDERS.get(brand)
+    if not folder_id:
+        log.error(f"No Drive folder mapped for brand: {brand}")
+        return False
+    brand_name = BRANDS[brand]["name"]
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M")
+    saved = 0
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient(timeout=30) as client:
+        for i, img_bytes in enumerate(images):
+            fname = f"{brand_name} — {content_type} — {ts} — slide{i+1}.png"
+            metadata = json.dumps({"name": fname, "parents": [folder_id]})
+            boundary = "mark_upload_boundary"
+            body = (
+                f"--{boundary}\r\n"
+                f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                f"{metadata}\r\n"
+                f"--{boundary}\r\n"
+                f"Content-Type: image/png\r\n\r\n"
+            ).encode() + img_bytes + f"\r\n--{boundary}--\r\n".encode()
+            try:
+                r = await client.post(
+                    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+                    headers={**headers, "Content-Type": f"multipart/related; boundary={boundary}"},
+                    content=body,
+                )
+                if r.status_code in (200, 201):
+                    saved += 1
+                else:
+                    log.error(f"Drive upload failed ({r.status_code}): {r.text[:200]}")
+            except Exception as e:
+                log.error(f"Drive upload error: {e}")
+        # Save caption as text file
+        cap_fname = f"{brand_name} — {content_type} — {ts} — caption.txt"
+        cap_meta = json.dumps({"name": cap_fname, "parents": [folder_id]})
+        cap_boundary = "mark_cap_boundary"
+        cap_body = (
+            f"--{cap_boundary}\r\n"
+            f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+            f"{cap_meta}\r\n"
+            f"--{cap_boundary}\r\n"
+            f"Content-Type: text/plain; charset=UTF-8\r\n\r\n"
+            f"{caption}\r\n"
+            f"--{cap_boundary}--\r\n"
+        ).encode()
+        try:
+            r = await client.post(
+                "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+                headers={**headers, "Content-Type": f"multipart/related; boundary={cap_boundary}"},
+                content=cap_body,
+            )
+            if r.status_code in (200, 201):
+                saved += 1
+        except Exception as e:
+            log.error(f"Drive caption upload error: {e}")
+    log.info(f"Saved {saved} files to Drive for {brand_name}")
+    return saved > 0
 
 
 # ── TELEGRAM ──────────────────────────────────────────────────────────────────
@@ -1259,8 +1386,10 @@ async def handle_callback(update: dict):
         pending_approvals.pop(msg_id, None)
         await send_telegram(f"_Rendering and posting {brand} content now..._")
         results = await post_content(content, brand)
-        success = sum(1 for v in results.values() if "error" not in str(v))
-        await send_telegram(f"✅ *Posted — {BRANDS[brand]['name']}*\n{success}/{len(results)} platforms succeeded")
+        platform_count = sum(1 for k, v in results.items() if k != "drive_saved" and "error" not in str(v))
+        total_platforms = sum(1 for k in results if k != "drive_saved")
+        drive_line = "\n📁 Saved to Mark Marketing" if results.get("drive_saved") else "\n⚠️ Drive save failed"
+        await send_telegram(f"✅ *Posted — {BRANDS[brand]['name']}*\n{platform_count}/{total_platforms} platforms succeeded{drive_line}")
 
     elif action == "schedule_next":
         await answer_callback(cb_id, "Scheduling for next slot...")
