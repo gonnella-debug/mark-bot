@@ -431,6 +431,7 @@ async def generate_batch(brand: str, days: int = 14) -> list:
     for idx, slot in enumerate(slots):
         ct = type_rotation[idx % len(type_rotation)]
         topic = topics[idx % len(topics)]
+        log.warning(f"[generate_batch] No topic provided by Alex for slot {idx+1} — using fallback topic from config: '{topic}'")
         content = await generate_single(brand, ct, topic)
         if content:
             content["_scheduled_at"] = slot.isoformat()
@@ -442,17 +443,83 @@ async def generate_batch(brand: str, days: int = 14) -> list:
     return batch
 
 
-# ── CANVA VIA PLAYWRIGHT ──────────────────────────────────────────────────────
+# ── SLIDE RENDERER (Playwright + Unsplash + Real Logos) ──────────────────────
+
+# Logo URLs — served from Mark's own endpoint at startup
+_logo_cache: dict = {}  # brand → base64 data URI
+
+LOGO_PATHS = {
+    "nucassa_re": "logo_nucassa.jpg",
+    "nucassa_holdings": "logo_nucassa.jpg",
+    "listr": "logo_listr.png",
+}
+
+# Unsplash photos for slide backgrounds (curated, Dubai/finance/luxury)
+UNSPLASH_PHOTOS = {
+    "cover": [
+        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1080&h=1350&fit=crop",  # Dubai skyline
+        "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=1080&h=1350&fit=crop",  # Burj Khalifa
+        "https://images.unsplash.com/photo-1546412414-e1885259563a?w=1080&h=1350&fit=crop",  # Dubai Marina night
+        "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=1080&h=1350&fit=crop",  # Dubai aerial
+        "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=1080&h=1350&fit=crop",  # Dubai skyline sunset
+    ],
+    "data": [
+        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1080&h=1350&fit=crop",  # dark building abstract
+        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=1080&h=1350&fit=crop",  # dark skyscraper
+        "https://images.unsplash.com/photo-1524673450801-b5aa9b621b76?w=1080&h=1350&fit=crop",  # dark architecture
+        "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1080&h=1350&fit=crop",  # dark globe data
+        "https://images.unsplash.com/photo-1605792657660-596af9009e82?w=1080&h=1350&fit=crop",  # Dubai buildings upward
+    ],
+    "cta": [
+        "https://images.unsplash.com/photo-1496568816309-51d7c20e3b21?w=1080&h=1350&fit=crop",  # dark minimal building
+        "https://images.unsplash.com/photo-1545893835-abaa50cbe628?w=1080&h=1350&fit=crop",  # dark architecture
+    ],
+}
+
+
+def _pick_photo(slide_type: str, topic: str = "") -> str:
+    """Pick a photo URL based on slide type, using topic hash for consistency."""
+    import hashlib
+    photos = UNSPLASH_PHOTOS.get(slide_type, UNSPLASH_PHOTOS["cover"])
+    idx = int(hashlib.md5(topic.encode()).hexdigest(), 16) % len(photos)
+    return photos[idx]
+
+
+async def _load_logo_b64(brand: str) -> str:
+    """Load the brand logo as a base64 data URI, cached in memory."""
+    if brand in _logo_cache:
+        return _logo_cache[brand]
+    # Try from Drive brand folder first
+    folder_id = GDRIVE_MARKETING_BRAND_FOLDERS.get(brand)
+    if folder_id and GDRIVE_API_KEY:
+        files = await list_drive_files(folder_id)
+        logo_file = next((f for f in files if "logo" in f.get("name", "").lower() and "image" in f.get("mimeType", "")), None)
+        if logo_file:
+            try:
+                async with httpx.AsyncClient(timeout=15) as client:
+                    r = await client.get(
+                        f"https://www.googleapis.com/drive/v3/files/{logo_file['id']}",
+                        params={"alt": "media", "key": GDRIVE_API_KEY},
+                    )
+                    if r.status_code == 200:
+                        mime = logo_file.get("mimeType", "image/png")
+                        b64 = base64.b64encode(r.content).decode()
+                        _logo_cache[brand] = f"data:{mime};base64,{b64}"
+                        log.info(f"Loaded logo for {brand} from Drive")
+                        return _logo_cache[brand]
+            except Exception as e:
+                log.error(f"Logo fetch error: {e}")
+    # Fallback: empty (will show text-only logo)
+    _logo_cache[brand] = ""
+    return ""
+
 
 async def create_canva_slide(content: dict, slide_index: int, brand: str) -> bytes | None:
-    """
-    Open Canva in a headless browser, create a design from scratch matching
-    Nucassa/ListR brand guidelines, export as PNG bytes.
-    """
+    """Render a slide with real photos, real logos, and proper brand styling."""
     try:
         from playwright.async_api import async_playwright
     except ImportError:
-        log.error("Playwright not installed — run: pip install playwright && playwright install chromium")
+        log.error("Playwright not installed")
         return None
 
     cfg = BRANDS[brand]
@@ -460,268 +527,141 @@ async def create_canva_slide(content: dict, slide_index: int, brand: str) -> byt
     if slide_index >= len(slides):
         return None
     slide = slides[slide_index]
+    topic = content.get("_topic", "")
 
-    # Build the slide HTML that matches brand exactly
-    html = _build_slide_html(slide, slide_index, cfg, content)
+    logo_uri = await _load_logo_b64(brand)
+    html = _build_slide_html(slide, slide_index, cfg, content, logo_uri, topic)
 
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page(viewport={"width": 1080, "height": 1350})
             await page.set_content(html, wait_until="networkidle")
-            await asyncio.sleep(1)  # let fonts render
+            await asyncio.sleep(2)  # let fonts + images load
             screenshot = await page.screenshot(type="png", full_page=False)
             await browser.close()
             return screenshot
     except Exception as e:
-        log.error(f"Canva/Playwright error: {e}")
+        log.error(f"Playwright render error: {e}")
         return None
 
 
-def _build_slide_html(slide: dict, index: int, cfg: dict, content: dict) -> str:
-    """Generate brand-accurate HTML for a slide — rendered to PNG by Playwright."""
+def _build_slide_html(slide: dict, index: int, cfg: dict, content: dict, logo_uri: str, topic: str) -> str:
+    """Generate brand-accurate HTML with real photos and logos."""
     primary = cfg["color_primary"]
     accent = cfg["color_accent"]
     secondary = cfg.get("color_secondary", "#3b3b3b")
     is_listr = cfg["name"] == "ListR.ae"
+    brand_name = "LISTR.AE" if is_listr else "NUCASSA"
+    website = cfg["website"]
+
+    logo_html = f'<img src="{logo_uri}" style="height:80px;width:auto;object-fit:contain;">' if logo_uri else f'<div style="font-family:Montserrat,sans-serif;font-weight:700;font-size:18px;color:{accent};letter-spacing:4px;">{brand_name}</div>'
+    logo_small = f'<img src="{logo_uri}" style="height:50px;width:auto;object-fit:contain;opacity:0.6;">' if logo_uri else f'<div style="font-family:Montserrat,sans-serif;font-weight:600;font-size:13px;color:{accent};letter-spacing:4px;opacity:0.5;">{brand_name}</div>'
 
     if index == 0:
-        # COVER SLIDE
+        # COVER SLIDE — real photo background + dark gradient overlay
         headline = slide.get("headline", "")
         subtext = slide.get("subtext", "")
-        photo_dir = slide.get("photo_direction", "Dubai skyline at dusk")
+        photo_url = _pick_photo("cover", topic)
         return f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Varta:wght@400;500&display=swap" rel="stylesheet">
+<html><head><meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Varta:wght@400;500&display=swap" rel="stylesheet">
 <style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{
-  width: 1080px; height: 1350px; overflow: hidden;
-  background: {primary};
-  font-family: 'Montserrat', sans-serif;
-  position: relative;
-  display: flex; flex-direction: column; justify-content: flex-end;
-}}
-.bg-overlay {{
-  position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.7) 60%, rgba(0,0,0,0.9) 100%);
-  z-index: 1;
-}}
-.bg-text {{
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  font-size: 11px; color: rgba(255,255,255,0.15); text-align: center;
-  font-family: 'Varta', sans-serif; z-index: 0; max-width: 900px;
-  letter-spacing: 2px; text-transform: uppercase;
-}}
-.logo-watermark {{
-  position: absolute; top: 60px; right: 60px; z-index: 10;
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-}}
-.logo-icon {{
-  width: 64px; height: 64px;
-  border: 2px solid {accent}; border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-}}
-.logo-text {{
-  font-family: 'Montserrat', sans-serif; font-weight: 600;
-  font-size: 14px; color: {accent}; letter-spacing: 3px;
-}}
-.content {{
-  position: relative; z-index: 2;
-  padding: 0 80px 100px 80px;
-}}
-.headline {{
-  font-family: 'Montserrat', sans-serif; font-weight: 700;
-  font-size: 72px; line-height: 1.1;
-  color: #FFFFFF; margin-bottom: 24px;
-  text-transform: uppercase; letter-spacing: -1px;
-}}
-.headline span {{ color: {accent}; }}
-.subtext {{
-  font-family: 'Varta', sans-serif; font-weight: 400;
-  font-size: 28px; color: rgba(255,255,255,0.8);
-  line-height: 1.4; margin-bottom: 48px;
-}}
-.arrow-icon {{
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 56px; height: 56px;
-  border: 2px solid {accent}; border-radius: 50%;
-  color: {accent}; font-size: 28px;
-}}
-</style>
-</head>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ width:1080px; height:1350px; overflow:hidden; position:relative; font-family:'Montserrat',sans-serif; }}
+.bg {{ position:absolute; inset:0; background:url('{photo_url}') center/cover no-repeat; }}
+.overlay {{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.55) 40%, rgba(0,0,0,0.88) 75%, rgba(0,0,0,0.95) 100%); }}
+.logo {{ position:absolute; top:50px; left:50%; transform:translateX(-50%); z-index:10; }}
+.content {{ position:absolute; bottom:0; left:0; right:0; padding:0 70px 90px; z-index:5; }}
+.headline {{ font-weight:800; font-size:68px; line-height:1.08; color:#fff; text-transform:uppercase; letter-spacing:-1px; margin-bottom:20px; }}
+.accent {{ color:{accent}; }}
+.subtext {{ font-family:'Varta',sans-serif; font-size:26px; color:rgba(255,255,255,0.75); line-height:1.4; margin-bottom:40px; }}
+.swipe {{ display:inline-flex; align-items:center; justify-content:center; width:52px; height:52px; border:2px solid {accent}; border-radius:50%; color:{accent}; font-size:24px; }}
+</style></head>
 <body>
-<div class="bg-text">PHOTO: {photo_dir.upper()}</div>
-<div class="bg-overlay"></div>
-<div class="logo-watermark">
-  <div class="logo-icon">
-    <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-      <path d="M8 28V8L18 20L28 8V28" stroke="{accent}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-  </div>
-  <div class="logo-text">{'LISTR.AE' if is_listr else 'NUCASSA'}</div>
-</div>
+<div class="bg"></div>
+<div class="overlay"></div>
+<div class="logo">{logo_small}</div>
 <div class="content">
   <div class="headline">{headline}</div>
   <div class="subtext">{subtext}</div>
-  <div class="arrow-icon">→</div>
+  <div class="swipe">→</div>
 </div>
-</body>
-</html>"""
+</body></html>"""
 
     elif index == 1:
-        # DATA SLIDE
+        # DATA SLIDE — dark photo bg + stats overlay
         stats = slide.get("stats", ["—", "—", "—"])
         while len(stats) < 3:
             stats.append("—")
         def split_stat(s):
             parts = s.split(":", 1)
             return (parts[1].strip(), parts[0].strip()) if len(parts) == 2 else (s, "")
-
         s1v, s1l = split_stat(stats[0])
         s2v, s2l = split_stat(stats[1])
         s3v, s3l = split_stat(stats[2])
+        photo_url = _pick_photo("data", topic)
 
         return f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Varta:wght@400;500&display=swap" rel="stylesheet">
+<html><head><meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Varta:wght@400;500&display=swap" rel="stylesheet">
 <style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{
-  width: 1080px; height: 1350px; overflow: hidden;
-  background: {secondary};
-  font-family: 'Montserrat', sans-serif;
-  position: relative;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-}}
-.logo-watermark {{
-  position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
-  opacity: 0.4;
-}}
-.logo-text {{
-  font-family: 'Montserrat', sans-serif; font-weight: 600;
-  font-size: 13px; color: {accent}; letter-spacing: 4px;
-}}
-.stats-grid {{
-  display: flex; flex-direction: column; gap: 80px;
-  align-items: center; width: 100%;
-  padding: 160px 80px 80px;
-}}
-.stat-item {{ text-align: center; }}
-.stat-value {{
-  font-family: 'Montserrat', sans-serif; font-weight: 700;
-  font-size: 110px; line-height: 1;
-  color: {accent}; letter-spacing: -3px;
-}}
-.stat-label {{
-  font-family: 'Varta', sans-serif; font-weight: 500;
-  font-size: 26px; color: #FFFFFF;
-  text-transform: uppercase; letter-spacing: 4px;
-  margin-top: 12px;
-}}
-.divider {{
-  width: 120px; height: 1px;
-  background: rgba(205, 161, 127, 0.3);
-}}
-</style>
-</head>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ width:1080px; height:1350px; overflow:hidden; position:relative; font-family:'Montserrat',sans-serif; }}
+.bg {{ position:absolute; inset:0; background:url('{photo_url}') center/cover no-repeat; }}
+.overlay {{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.75) 50%, rgba(0,0,0,0.85) 100%); }}
+.logo {{ position:absolute; top:50px; left:50%; transform:translateX(-50%); z-index:10; }}
+.stats {{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:60px; z-index:5; padding:140px 80px 80px; }}
+.stat {{ text-align:center; }}
+.stat-val {{ font-weight:800; font-size:96px; line-height:1; color:{accent}; letter-spacing:-2px; }}
+.stat-lbl {{ font-family:'Varta',sans-serif; font-weight:500; font-size:24px; color:#fff; text-transform:uppercase; letter-spacing:4px; margin-top:10px; }}
+.divider {{ width:100px; height:1px; background:rgba(205,161,127,0.25); }}
+</style></head>
 <body>
-<div class="logo-watermark">
-  <svg width="28" height="28" viewBox="0 0 36 36" fill="none">
-    <path d="M8 28V8L18 20L28 8V28" stroke="{accent}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-  </svg>
-  <div class="logo-text">{'LISTR.AE' if is_listr else 'NUCASSA'}</div>
-</div>
-<div class="stats-grid">
-  <div class="stat-item">
-    <div class="stat-value">{s1v}</div>
-    <div class="stat-label">{s1l}</div>
-  </div>
+<div class="bg"></div>
+<div class="overlay"></div>
+<div class="logo">{logo_small}</div>
+<div class="stats">
+  <div class="stat"><div class="stat-val">{s1v}</div><div class="stat-lbl">{s1l}</div></div>
   <div class="divider"></div>
-  <div class="stat-item">
-    <div class="stat-value">{s2v}</div>
-    <div class="stat-label">{s2l}</div>
-  </div>
+  <div class="stat"><div class="stat-val">{s2v}</div><div class="stat-lbl">{s2l}</div></div>
   <div class="divider"></div>
-  <div class="stat-item">
-    <div class="stat-value">{s3v}</div>
-    <div class="stat-label">{s3l}</div>
-  </div>
+  <div class="stat"><div class="stat-val">{s3v}</div><div class="stat-lbl">{s3l}</div></div>
 </div>
-</body>
-</html>"""
+</body></html>"""
 
     else:
-        # CTA SLIDE
+        # CTA SLIDE — solid dark + large logo + CTA
         headline = slide.get("headline", "")
         cta_line = slide.get("cta_line", cfg["cta"])
-        website = cfg["website"]
+        photo_url = _pick_photo("cta", topic)
+
         return f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Varta:wght@400;500&display=swap" rel="stylesheet">
+<html><head><meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Varta:wght@400;500&display=swap" rel="stylesheet">
 <style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{
-  width: 1080px; height: 1350px; overflow: hidden;
-  background: {primary};
-  font-family: 'Montserrat', sans-serif;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  text-align: center; padding: 80px;
-}}
-.headline {{
-  font-family: 'Montserrat', sans-serif; font-weight: 700;
-  font-size: 64px; line-height: 1.15;
-  color: #FFFFFF; text-transform: uppercase;
-  letter-spacing: -1px; margin-bottom: 40px;
-}}
-.cta-line {{
-  font-family: 'Varta', sans-serif; font-weight: 500;
-  font-size: 32px; color: {accent};
-  margin-bottom: 80px; letter-spacing: 1px;
-}}
-.logo-block {{
-  display: flex; flex-direction: column;
-  align-items: center; gap: 16px;
-  margin-top: 40px;
-}}
-.logo-icon {{
-  width: 90px; height: 90px;
-  border: 2.5px solid {accent}; border-radius: 12px;
-  display: flex; align-items: center; justify-content: center;
-}}
-.logo-name {{
-  font-family: 'Montserrat', sans-serif; font-weight: 600;
-  font-size: 22px; color: {accent}; letter-spacing: 5px;
-}}
-.website {{
-  font-family: 'Varta', sans-serif; font-weight: 400;
-  font-size: 18px; color: rgba(255,255,255,0.4);
-  margin-top: 8px; letter-spacing: 2px;
-}}
-</style>
-</head>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ width:1080px; height:1350px; overflow:hidden; position:relative; font-family:'Montserrat',sans-serif; }}
+.bg {{ position:absolute; inset:0; background:url('{photo_url}') center/cover no-repeat; }}
+.overlay {{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.88) 50%, rgba(0,0,0,0.95) 100%); }}
+.wrap {{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:80px; z-index:5; }}
+.headline {{ font-weight:800; font-size:60px; line-height:1.12; color:#fff; text-transform:uppercase; letter-spacing:-1px; margin-bottom:36px; }}
+.cta {{ font-family:'Varta',sans-serif; font-weight:500; font-size:30px; color:{accent}; margin-bottom:70px; letter-spacing:1px; }}
+.logo-block {{ display:flex; flex-direction:column; align-items:center; gap:20px; }}
+.website {{ font-family:'Varta',sans-serif; font-size:18px; color:rgba(255,255,255,0.35); letter-spacing:2px; margin-top:10px; }}
+</style></head>
 <body>
-<div class="headline">{headline}</div>
-<div class="cta-line">{cta_line}</div>
-<div class="logo-block">
-  <div class="logo-icon">
-    <svg width="52" height="52" viewBox="0 0 36 36" fill="none">
-      <path d="M8 28V8L18 20L28 8V28" stroke="{accent}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
+<div class="bg"></div>
+<div class="overlay"></div>
+<div class="wrap">
+  <div class="headline">{headline}</div>
+  <div class="cta">{cta_line}</div>
+  <div class="logo-block">
+    {logo_html}
+    <div class="website">{website}</div>
   </div>
-  <div class="logo-name">{'LISTR.AE' if is_listr else 'NUCASSA'}</div>
-  <div class="website">{website}</div>
 </div>
-</body>
-</html>"""
+</body></html>"""
 
 
 async def render_carousel_images(content: dict, brand: str) -> list[bytes]:
@@ -1559,7 +1499,7 @@ async def api_pdf_post(request: Request, background_tasks: BackgroundTasks):
 
 async def _run_single(brand: str, content_type: str, topic: str, breaking: bool = False):
     if not topic or not topic.strip():
-        await send_telegram("⚠️ No topic provided — Alex must provide the content angle. Tell Alex what you want.")
+        await send_telegram("⚠️ No topic provided — Alex must provide the content angle. Use Alex to generate content.")
         return
     await send_telegram(f"_Generating {BRANDS[brand]['name']} {content_type}..._")
     content = await generate_single(brand, content_type, topic)
