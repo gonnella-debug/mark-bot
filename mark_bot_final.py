@@ -46,12 +46,12 @@ TELEGRAM_CHAT_ID    = os.getenv("TELEGRAM_CHAT_ID")
 
 # Meta
 META_APP_ID         = os.getenv("META_APP_ID", "212164228622395")
-META_APP_SECRET     = os.getenv("META_APP_SECRET")
+META_APP_SECRET     = os.getenv("META_APP_SECRET", "c9592e63b3355f9e7e512223464681c0")
 META_SYSTEM_TOKEN   = os.getenv("META_SYSTEM_TOKEN")
 
 # LinkedIn
-LI_CLIENT_ID        = os.getenv("LI_CLIENT_ID")
-LI_CLIENT_SECRET    = os.getenv("LI_CLIENT_SECRET", "YOUR_LI_CLIENT_SECRET")
+LI_CLIENT_ID        = os.getenv("LI_CLIENT_ID", "771btfsjdaf16f")
+LI_CLIENT_SECRET    = os.getenv("LI_CLIENT_SECRET", "WPL_AP1.RbvoWqxW1b8AJXwr.8tkOrQ==")
 LI_NUCASSA_RE_PAGE  = os.getenv("LI_NUCASSA_RE_PAGE", "90919312")
 LI_HOLDINGS_PAGE    = os.getenv("LI_HOLDINGS_PAGE", "109941216")
 LI_ACCESS_TOKEN     = os.getenv("LI_ACCESS_TOKEN", "")       # set after first OAuth
@@ -77,7 +77,7 @@ IG_LISTR            = "17841475489496432"   # @listr.ae
 FB_NUCASSA_RE       = "106173405736149"     # Nucassa Real Estate Dubai (only FB page Mark posts to)
 
 # Railway public URL for LinkedIn OAuth callback
-RAILWAY_URL         = os.getenv("RAILWAY_URL", "https://mark-bot-production.up.railway.app")
+RAILWAY_URL         = os.getenv("RAILWAY_URL", "https://mark-bot.up.railway.app")
 
 # ── BRAND CONFIG ──────────────────────────────────────────────────────────────
 BRANDS = {
@@ -844,7 +844,7 @@ async def linkedin_auth_start():
     """Start LinkedIn OAuth flow. Visit this URL in browser to authenticate."""
     state = str(uuid.uuid4())
     li_oauth_states[state] = "mark"
-    scope = "w_member_social"
+    scope = "w_member_social,r_organization_social,w_organization_social"
     auth_url = (
         f"https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code"
