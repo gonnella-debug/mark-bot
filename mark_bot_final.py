@@ -1399,13 +1399,44 @@ async def api_pdf_post(request: Request, background_tasks: BackgroundTasks):
 # ── BACKGROUND TASKS ──────────────────────────────────────────────────────────
 
 async def _run_single(brand: str, content_type: str, topic: str, breaking: bool = False):
+    await send_telegram(f"_Generating {BRANDS[brand]['name']} {content_type}..._")
     content = await generate_single(brand, content_type, topic)
-    if content:
-        if breaking:
-            content["_breaking"] = True
-        await send_approval_request(content, brand)
-    else:
+    if not content:
         await send_telegram(f"⚠️ Mark failed to generate content for {brand}")
+        return
+    if breaking:
+        content["_breaking"] = True
+    await send_telegram(f"_Rendering slides..._")
+    if content_type == "carousel":
+        images, drive_links = await render_carousel_images(content, brand)
+    elif content_type in ("static", "story"):
+        img, link = await render_static_image(content, brand)
+        images = [img] if img else []
+        drive_links = [link] if link else []
+    else:
+        images, drive_links = [], []
+    for i, img_bytes in enumerate(images):
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+            async with httpx.AsyncClient(timeout=30) as client:
+                await client.post(url, data={"chat_id": TELEGRAM_CHAT_ID}, files={"photo": (f"slide{i+1}.png", img_bytes, "image/png")})
+        except Exception as e:
+            log.error(f"Photo send error: {e}")
+    drive_text = ""
+    if drive_links:
+        drive_text = "\n\n📂 Drive: " + " | ".join([f"[Slide {i+1}]({l})" for i, l in enumerate(drive_links) if l])
+    cap = content.get("caption_instagram", "")[:200]
+    markup = {"inline_keyboard": [
+        [{"text": "✅ POST NOW", "callback_data": f"post_now|{brand}"},
+         {"text": "❌ Reject", "callback_data": f"reject_single|{brand}"}],
+        [{"text": "🔄 Regenerate", "callback_data": f"regen_single|{brand}||"}],
+    ]}
+    msg = await send_telegram(
+        f"*{BRANDS[brand]['name']}*\n\n{cap}{drive_text}\n\n_Tap POST NOW to publish. Nothing posts until you do._",
+        reply_markup=markup
+    )
+    if msg.get("result", {}).get("message_id"):
+        pending_approvals[msg["result"]["message_id"]] = {"content": content, "brand": brand, "batch_id": None, "idx": None}
 
 
 async def _run_batch(brand: str, days: int):
