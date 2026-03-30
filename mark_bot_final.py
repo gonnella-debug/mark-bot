@@ -1003,15 +1003,20 @@ async def post_content(content: dict, brand: str) -> dict:
     fb_page_id = cfg["fb_page_id"]
     li_page_id = cfg["li_page_id"]
 
-    log.info(f"Rendering images for {brand} — {ct}")
-
-    if ct == "carousel":
-        images = await render_carousel_images(content, brand)
-    elif ct in ("static", "story"):
-        img = await render_static_image(content, brand)
-        images = [img] if img else []
+    # Use cached renders if available, otherwise render fresh
+    cached = content.pop("_cached_images", None)
+    if cached:
+        log.info(f"Using cached rendered images for {brand} — {ct}")
+        images = cached
     else:
-        images = []  # reels = text/script only
+        log.info(f"Rendering images for {brand} — {ct}")
+        if ct == "carousel":
+            images = await render_carousel_images(content, brand)
+        elif ct in ("static", "story"):
+            img = await render_static_image(content, brand)
+            images = [img] if img else []
+        else:
+            images = []  # reels = text/script only
 
     if not images and ct not in ("reels",):
         log.warning(f"No images rendered for {brand} — posting may fail")
@@ -1346,10 +1351,9 @@ async def send_approval_request(content: dict, brand: str, batch_id: str = None,
 
     if breaking:
         markup = {"inline_keyboard": [
-            [{"text": "⚡ Post now", "callback_data": f"post_now|{brand}"},
-             {"text": "📅 Next slot", "callback_data": f"schedule_next|{brand}"}],
-            [{"text": "❌ Reject", "callback_data": f"reject_single|{brand}"},
-             {"text": "🔄 Regenerate", "callback_data": f"regen_single|{brand}|{batch_id or ''}|{idx or ''}"}],
+            [{"text": "✅ Approve", "callback_data": f"approve_single|{brand}"},
+             {"text": "❌ Reject", "callback_data": f"reject_single|{brand}"}],
+            [{"text": "🔄 Regenerate", "callback_data": f"regen_single|{brand}|{batch_id or ''}|{idx or ''}"}],
         ]}
     else:
         markup = {"inline_keyboard": [
@@ -1381,30 +1385,33 @@ async def handle_callback(update: dict):
     parts = data.split("|")
     action = parts[0]
 
-    if action == "post_now":
-        await answer_callback(cb_id, "Posting now...")
+    if action == "approve_single":
+        await answer_callback(cb_id, "Approved ✅")
         pending_approvals.pop(msg_id, None)
-        await send_telegram(f"_Rendering and posting {brand} content now..._")
+        await send_telegram(f"_Saving to Drive and posting {BRANDS[brand]['name']} content..._")
+        # Use cached rendered images if available to avoid re-rendering
+        cached_b64 = content.pop("_rendered_images_b64", [])
+        if cached_b64:
+            cached_images = [base64.b64decode(b) for b in cached_b64]
+            content["_cached_images"] = cached_images
         results = await post_content(content, brand)
         platform_count = sum(1 for k, v in results.items() if k != "drive_saved" and "error" not in str(v))
         total_platforms = sum(1 for k in results if k != "drive_saved")
         drive_line = "\n📁 Saved to Mark Marketing" if results.get("drive_saved") else "\n⚠️ Drive save failed"
-        await send_telegram(f"✅ *Posted — {BRANDS[brand]['name']}*\n{platform_count}/{total_platforms} platforms succeeded{drive_line}")
+        await send_telegram(f"✅ *Approved — {BRANDS[brand]['name']}*\n{platform_count}/{total_platforms} platforms posted{drive_line}")
 
-    elif action == "schedule_next":
-        await answer_callback(cb_id, "Scheduling for next slot...")
+    elif action == "post_now":
+        # Legacy support — treat same as approve_single
+        await answer_callback(cb_id, "Approved ✅")
         pending_approvals.pop(msg_id, None)
-        cfg = BRANDS[brand]
-        now = datetime.now(timezone.utc)
-        for i in range(1, 8):
-            candidate = now + timedelta(days=i)
-            if candidate.weekday() in cfg["posting_weekdays"]:
-                content["_scheduled_at"] = candidate.replace(hour=cfg["post_hour_utc"], minute=0, second=0).isoformat()
-                content["_slot_label"] = candidate.strftime("%a %d %b — %H:%M UTC")
-                break
-        if batch_id and batch_id in pending_batches:
-            pending_batches[batch_id].append(content)
-        await send_telegram(f"📅 Scheduled for {content.get('_slot_label', 'next slot')}")
+        cached_b64 = content.pop("_rendered_images_b64", [])
+        if cached_b64:
+            content["_cached_images"] = [base64.b64decode(b) for b in cached_b64]
+        results = await post_content(content, brand)
+        platform_count = sum(1 for k, v in results.items() if k != "drive_saved" and "error" not in str(v))
+        total_platforms = sum(1 for k in results if k != "drive_saved")
+        drive_line = "\n📁 Saved to Mark Marketing" if results.get("drive_saved") else "\n⚠️ Drive save failed"
+        await send_telegram(f"✅ *Approved — {BRANDS[brand]['name']}*\n{platform_count}/{total_platforms} platforms posted{drive_line}")
 
     elif action == "approve_one":
         await answer_callback(cb_id, "Approved ✅")
@@ -1535,34 +1542,32 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
         return
     if breaking:
         content["_breaking"] = True
+    # Render images and send as photos so GG can see what he's approving
     await send_telegram(f"_Rendering slides..._")
+    rendered_images = []
     if content_type == "carousel":
-        images = await render_carousel_images(content, brand)
-        drive_links = []
+        rendered_images = await render_carousel_images(content, brand)
     elif content_type in ("static", "story"):
         img = await render_static_image(content, brand)
-        images = [img] if img else []
-        drive_links = []
-    else:
-        images, drive_links = [], []
-    for i, img_bytes in enumerate(images):
+        rendered_images = [img] if img else []
+    for i, img_bytes in enumerate(rendered_images):
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
             async with httpx.AsyncClient(timeout=30) as client:
                 await client.post(url, data={"chat_id": TELEGRAM_CHAT_ID}, files={"photo": (f"slide{i+1}.png", img_bytes, "image/png")})
         except Exception as e:
             log.error(f"Photo send error: {e}")
-    drive_text = ""
-    if drive_links:
-        drive_text = "\n\n📂 Drive: " + " | ".join([f"[Slide {i+1}]({l})" for i, l in enumerate(drive_links) if l])
-    cap = content.get("caption_instagram", "")[:200]
+    # Cache rendered images so we don't re-render on approval
+    content["_rendered_images_b64"] = [base64.b64encode(img).decode() for img in rendered_images]
+    # Show caption + approve/reject buttons — all posts go at 6pm Dubai
+    cap = content.get("caption_instagram", "")[:300]
     markup = {"inline_keyboard": [
-        [{"text": "✅ POST NOW", "callback_data": f"post_now|{brand}"},
+        [{"text": "✅ Approve", "callback_data": f"approve_single|{brand}"},
          {"text": "❌ Reject", "callback_data": f"reject_single|{brand}"}],
         [{"text": "🔄 Regenerate", "callback_data": f"regen_single|{brand}||"}],
     ]}
     msg = await send_telegram(
-        f"*{BRANDS[brand]['name']}*\n\n{cap}{drive_text}\n\n_Tap POST NOW to publish. Nothing posts until you do._",
+        f"*{BRANDS[brand]['name']}*\n\n{cap}\n\n_Tap Approve to schedule for 6pm Dubai. Nothing posts until you approve._",
         reply_markup=markup
     )
     if msg.get("result", {}).get("message_id"):
