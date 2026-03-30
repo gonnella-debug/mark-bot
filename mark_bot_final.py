@@ -317,9 +317,9 @@ def parse_json(raw: str) -> dict | None:
 
 async def generate_single(brand: str, content_type: str, topic: str = "", pdf_b64: str = None, pdf_name: str = "") -> dict | None:
     cfg = BRANDS[brand]
-    if not topic:
-        import random
-        topic = random.choice(cfg["topics"])
+    if not topic and not pdf_b64:
+        log.warning(f"generate_single called without topic for {brand} — Alex must provide the angle")
+        return None
 
     async def _call_with_images(prompt: str, ref_images: list[str], extra_b64: str = None) -> str:
         """Call Claude with optional reference images and/or a PDF."""
@@ -1086,17 +1086,35 @@ async def list_drive_files(folder_id: str, mime_filter: str = None) -> list:
     return []
 
 
+async def _collect_images_recursive(folder_id: str, max_depth: int = 3, _depth: int = 0) -> list:
+    """Recursively search Drive subfolders for image files, up to max_depth levels."""
+    if _depth > max_depth:
+        return []
+    files = await list_drive_files(folder_id)
+    images = []
+    subfolder_ids = []
+    for f in files:
+        mime = f.get("mimeType", "")
+        if "image" in mime:
+            images.append(f)
+        elif mime == "application/vnd.google-apps.folder":
+            subfolder_ids.append(f["id"])
+    for sub_id in subfolder_ids:
+        images.extend(await _collect_images_recursive(sub_id, max_depth, _depth + 1))
+    return images
+
+
 async def fetch_listr_reference_images() -> list[str]:
-    """Fetch up to 3 ListR example images from Drive as base64."""
-    files = await list_drive_files(GDRIVE_LISTR_REF_ID)
-    image_files = [f for f in files if "image" in f.get("mimeType", "")][:3]
+    """Fetch up to 3 ListR example images from Drive as base64 (searches subfolders)."""
+    image_files = await _collect_images_recursive(GDRIVE_LISTR_REF_ID)
+    image_files = image_files[-3:]  # most recent (last returned by API)
     return await _fetch_images_as_b64(image_files)
 
 
 async def fetch_nucassa_reference_images() -> list[str]:
-    """Fetch up to 3 Nucassa example images from Drive as base64."""
-    files = await list_drive_files(GDRIVE_NUCASSA_REF_ID)
-    image_files = [f for f in files if "image" in f.get("mimeType", "")][:3]
+    """Fetch up to 3 Nucassa example images from Drive as base64 (searches subfolders)."""
+    image_files = await _collect_images_recursive(GDRIVE_NUCASSA_REF_ID)
+    image_files = image_files[-3:]  # most recent (last returned by API)
     return await _fetch_images_as_b64(image_files)
 
 
@@ -1487,6 +1505,11 @@ async def api_generate(request: Request, background_tasks: BackgroundTasks):
         return {"status": "generating", "action": "batch", "brand": brand, "days": days}
 
     elif action == "single" and brand:
+        if not topic or not topic.strip():
+            return JSONResponse(
+                {"status": "error", "message": "Topic required — Alex must provide the content angle"},
+                status_code=400,
+            )
         background_tasks.add_task(_run_single, brand, content_type, topic, breaking)
         return {"status": "generating", "action": "single", "brand": brand, "content_type": content_type}
 
@@ -1535,6 +1558,9 @@ async def api_pdf_post(request: Request, background_tasks: BackgroundTasks):
 # ── BACKGROUND TASKS ──────────────────────────────────────────────────────────
 
 async def _run_single(brand: str, content_type: str, topic: str, breaking: bool = False):
+    if not topic or not topic.strip():
+        await send_telegram("⚠️ No topic provided — Alex must provide the content angle. Tell Alex what you want.")
+        return
     await send_telegram(f"_Generating {BRANDS[brand]['name']} {content_type}..._")
     content = await generate_single(brand, content_type, topic)
     if not content:
