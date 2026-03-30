@@ -51,7 +51,7 @@ META_SYSTEM_TOKEN   = os.getenv("META_SYSTEM_TOKEN")
 
 # LinkedIn
 LI_CLIENT_ID        = os.getenv("LI_CLIENT_ID", "771btfsjdaf16f")
-LI_CLIENT_SECRET    = os.getenv("LI_CLIENT_SECRET", "")
+LI_CLIENT_SECRET    = os.getenv("LI_CLIENT_SECRET", "WPL_AP1.RbvoWqxW1b8AJXwr.8tkOrQ==")
 LI_NUCASSA_RE_PAGE  = os.getenv("LI_NUCASSA_RE_PAGE", "90919312")
 LI_HOLDINGS_PAGE    = os.getenv("LI_HOLDINGS_PAGE", "109941216")
 LI_ACCESS_TOKEN     = os.getenv("LI_ACCESS_TOKEN", "")       # set after first OAuth
@@ -844,7 +844,7 @@ async def linkedin_auth_start():
     """Start LinkedIn OAuth flow. Visit this URL in browser to authenticate."""
     state = str(uuid.uuid4())
     li_oauth_states[state] = "mark"
-    scope = "w_member_social"
+    scope = "w_member_social,r_organization_social,w_organization_social"
     auth_url = (
         f"https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code"
