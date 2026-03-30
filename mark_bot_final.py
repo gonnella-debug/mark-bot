@@ -1073,8 +1073,32 @@ async def fetch_nucassa_reference_images() -> list[str]:
     return await _fetch_images_as_b64(image_files)
 
 
+def _resize_image_bytes(img_bytes: bytes, max_bytes: int = 4_000_000) -> bytes:
+    """Resize image if it exceeds max_bytes using Pillow or simple quality reduction."""
+    if len(img_bytes) <= max_bytes:
+        return img_bytes
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(img_bytes))
+        # Resize to max 1200px on longest side
+        max_dim = 1200
+        if max(img.size) > max_dim:
+            ratio = max_dim / max(img.size)
+            new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+            img = img.resize(new_size, Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=75)
+        result = buf.getvalue()
+        log.info(f"Resized image from {len(img_bytes)} to {len(result)} bytes")
+        return result
+    except ImportError:
+        log.warning("Pillow not installed — skipping oversized image")
+        return img_bytes if len(img_bytes) <= max_bytes else b""
+
+
 async def _fetch_images_as_b64(image_files: list) -> list[str]:
-    """Download a list of Drive image files and return as base64 strings."""
+    """Download a list of Drive image files, resize if needed, return as base64."""
     images_b64 = []
     for f in image_files:
         try:
@@ -1084,7 +1108,9 @@ async def _fetch_images_as_b64(image_files: list) -> list[str]:
                     params={"alt": "media", "key": GDRIVE_API_KEY},
                 )
                 if r.status_code == 200:
-                    images_b64.append(base64.b64encode(r.content).decode("utf-8"))
+                    resized = _resize_image_bytes(r.content)
+                    if resized:
+                        images_b64.append(base64.b64encode(resized).decode("utf-8"))
         except Exception as e:
             log.error(f"Reference image fetch error: {e}")
     log.info(f"Fetched {len(images_b64)} reference images from Drive")
