@@ -298,7 +298,11 @@ async def call_claude(prompt: str, pdf_b64: str = None) -> str:
                 "messages": [{"role": "user", "content": content}],
             },
         )
-    return r.json()["content"][0]["text"]
+    resp_json = r.json()
+    if "content" not in resp_json:
+        log.error(f"Claude API error: {resp_json.get('error', resp_json)}")
+        return None
+    return resp_json["content"][0]["text"]
 
 
 def parse_json(raw: str) -> dict | None:
@@ -350,7 +354,11 @@ async def generate_single(brand: str, content_type: str, topic: str = "", pdf_b6
                     "messages": [{"role": "user", "content": content_parts}],
                 },
             )
-        return r.json()["content"][0]["text"]
+        resp_json = r.json()
+        if "content" not in resp_json:
+            log.error(f"Claude API error: {resp_json.get('error', resp_json)}")
+            return None
+        return resp_json["content"][0]["text"]
 
     if pdf_b64:
         # PDF brochure post — fetch brand reference images to maintain style
@@ -401,6 +409,9 @@ Tone: {cfg['tone']} | CTA: {cfg['cta']} | Handle: {cfg['handle']} | Website: {cf
 Use accurate verifiable Dubai real estate data. Return JSON only."""
         raw = await call_claude(prompt)
 
+    if not raw:
+        log.error(f"Claude returned no content for {brand}")
+        return None
     result = parse_json(raw)
     if result:
         result["_topic"] = topic
@@ -1026,7 +1037,7 @@ async def list_drive_files(folder_id: str, mime_filter: str = None) -> list:
     return []
 
 
-async def _collect_images_recursive(folder_id: str, max_depth: int = 3, _depth: int = 0) -> list:
+async def _collect_images_recursive(folder_id: str, max_depth: int = 2, _depth: int = 0, _limit: int = 10) -> list:
     """Recursively search Drive subfolders for image files, up to max_depth levels."""
     if _depth > max_depth:
         return []
@@ -1037,10 +1048,14 @@ async def _collect_images_recursive(folder_id: str, max_depth: int = 3, _depth: 
         mime = f.get("mimeType", "")
         if "image" in mime:
             images.append(f)
+            if len(images) >= _limit:
+                return images
         elif mime == "application/vnd.google-apps.folder":
             subfolder_ids.append(f["id"])
     for sub_id in subfolder_ids:
-        images.extend(await _collect_images_recursive(sub_id, max_depth, _depth + 1))
+        if len(images) >= _limit:
+            break
+        images.extend(await _collect_images_recursive(sub_id, max_depth, _depth + 1, _limit - len(images)))
     return images
 
 
