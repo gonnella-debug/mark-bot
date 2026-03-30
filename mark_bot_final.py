@@ -77,7 +77,7 @@ IG_LISTR            = "17841475489496432"   # @listr.ae
 FB_NUCASSA_RE       = "106173405736149"     # Nucassa Real Estate Dubai (only FB page Mark posts to)
 
 # Railway public URL for LinkedIn OAuth callback
-RAILWAY_URL         = os.getenv("RAILWAY_URL", "https://mark-bot.up.railway.app")
+RAILWAY_URL         = os.getenv("RAILWAY_URL", "https://mark-bot-production.up.railway.app")
 
 # ── BRAND CONFIG ──────────────────────────────────────────────────────────────
 BRANDS = {
