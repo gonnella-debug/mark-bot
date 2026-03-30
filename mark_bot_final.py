@@ -844,7 +844,7 @@ async def linkedin_auth_start():
     """Start LinkedIn OAuth flow. Visit this URL in browser to authenticate."""
     state = str(uuid.uuid4())
     li_oauth_states[state] = "mark"
-    scope = "w_member_social,r_organization_social,w_organization_social"
+    scope = "w_member_social"
     auth_url = (
         f"https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code"
