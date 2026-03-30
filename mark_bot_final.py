@@ -1408,11 +1408,12 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
         content["_breaking"] = True
     await send_telegram(f"_Rendering slides..._")
     if content_type == "carousel":
-        images, drive_links = await render_carousel_images(content, brand)
+        images = await render_carousel_images(content, brand)
+        drive_links = []
     elif content_type in ("static", "story"):
-        img, link = await render_static_image(content, brand)
+        img = await render_static_image(content, brand)
         images = [img] if img else []
-        drive_links = [link] if link else []
+        drive_links = []
     else:
         images, drive_links = [], []
     for i, img_bytes in enumerate(images):
