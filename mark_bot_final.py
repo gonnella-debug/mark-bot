@@ -454,10 +454,14 @@ async def generate_batch(brand: str, days: int = 14) -> list:
     return batch
 
 
-# ── SLIDE RENDERER (Playwright + Unsplash + Real Logos) ──────────────────────
+# ── SLIDE RENDERER (Pillow + Unsplash + Real Logos) ──────────────────────────
 
-# Logo URLs — served from Mark's own endpoint at startup
-_logo_cache: dict = {}  # brand → base64 data URI
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
+import io
+import textwrap
+
+# Logo file paths (local)
+_logo_cache: dict = {}  # brand → PIL Image
 
 LOGO_PATHS = {
     "nucassa_re": "logo_nucassa.jpg",
@@ -465,42 +469,159 @@ LOGO_PATHS = {
     "listr": "logo_listr.png",
 }
 
-# Unsplash photos for slide backgrounds (curated, Dubai/finance/luxury)
+# Unsplash search terms per slide type
+UNSPLASH_SEARCH_TERMS = {
+    "cover": ["Dubai skyline night", "Dubai marina aerial", "Dubai architecture luxury"],
+    "data": ["Dubai skyscraper dark", "modern architecture dark", "Dubai buildings night"],
+    "cta": ["dark minimal architecture", "luxury dark interior"],
+}
+
+# Fallback curated URLs if Unsplash API search fails
 UNSPLASH_PHOTOS = {
     "cover": [
-        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1080&h=1350&fit=crop",  # Dubai skyline
-        "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=1080&h=1350&fit=crop",  # Burj Khalifa
-        "https://images.unsplash.com/photo-1546412414-e1885259563a?w=1080&h=1350&fit=crop",  # Dubai Marina night
-        "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=1080&h=1350&fit=crop",  # Dubai aerial
-        "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=1080&h=1350&fit=crop",  # Dubai skyline sunset
+        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1080&h=1350&fit=crop",
+        "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=1080&h=1350&fit=crop",
+        "https://images.unsplash.com/photo-1546412414-e1885259563a?w=1080&h=1350&fit=crop",
+        "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=1080&h=1350&fit=crop",
+        "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=1080&h=1350&fit=crop",
     ],
     "data": [
-        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1080&h=1350&fit=crop",  # dark building abstract
-        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=1080&h=1350&fit=crop",  # dark skyscraper
-        "https://images.unsplash.com/photo-1524673450801-b5aa9b621b76?w=1080&h=1350&fit=crop",  # dark architecture
-        "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1080&h=1350&fit=crop",  # dark globe data
-        "https://images.unsplash.com/photo-1605792657660-596af9009e82?w=1080&h=1350&fit=crop",  # Dubai buildings upward
+        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1080&h=1350&fit=crop",
+        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=1080&h=1350&fit=crop",
+        "https://images.unsplash.com/photo-1524673450801-b5aa9b621b76?w=1080&h=1350&fit=crop",
+        "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1080&h=1350&fit=crop",
     ],
     "cta": [
-        "https://images.unsplash.com/photo-1496568816309-51d7c20e3b21?w=1080&h=1350&fit=crop",  # dark minimal building
-        "https://images.unsplash.com/photo-1545893835-abaa50cbe628?w=1080&h=1350&fit=crop",  # dark architecture
+        "https://images.unsplash.com/photo-1496568816309-51d7c20e3b21?w=1080&h=1350&fit=crop",
+        "https://images.unsplash.com/photo-1545893835-abaa50cbe628?w=1080&h=1350&fit=crop",
     ],
 }
 
+UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY", "")
 
-def _pick_photo(slide_type: str, topic: str = "") -> str:
-    """Pick a photo URL based on slide type, using topic hash for consistency."""
-    import hashlib
+# Font paths — try common macOS/Linux locations
+def _find_font(name: str, fallbacks: list[str] = None) -> str:
+    """Find a font file on the system."""
+    search_dirs = [
+        "/Users/gg/Library/Fonts",
+        "/Library/Fonts",
+        "/System/Library/Fonts",
+        "/System/Library/Fonts/Supplemental",
+        "/usr/share/fonts",
+        "/usr/share/fonts/truetype",
+    ]
+    names_to_try = [name] + (fallbacks or [])
+    for font_name in names_to_try:
+        for d in search_dirs:
+            for ext in [".ttf", ".otf", ".TTF", ".OTF"]:
+                path = os.path.join(d, font_name + ext)
+                if os.path.exists(path):
+                    return path
+                # Try with spaces/hyphens
+                for variant in [font_name.replace(" ", ""), font_name.replace(" ", "-")]:
+                    path = os.path.join(d, variant + ext)
+                    if os.path.exists(path):
+                        return path
+    return None
+
+
+def _get_font(name: str, size: int, fallbacks: list[str] = None) -> ImageFont.FreeTypeFont:
+    """Load a font at the given size, with fallbacks."""
+    path = _find_font(name, fallbacks)
+    if path:
+        return ImageFont.truetype(path, size)
+    log.warning(f"Font '{name}' not found, using default")
+    return ImageFont.load_default()
+
+
+# Headline font: Montserrat SemiBold / Bold
+FONT_HEADLINE = lambda size: _get_font("Montserrat-SemiBold", size, ["Montserrat-Bold", "Montserrat", "Arial Bold", "Helvetica-Bold"])
+# Body font: Varta Medium
+FONT_BODY = lambda size: _get_font("Varta-Medium", size, ["Varta", "Varta-Regular", "Arial", "Helvetica"])
+
+
+def _hex_to_rgb(hex_color: str) -> tuple:
+    """Convert hex color to RGB tuple."""
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+
+def _hex_to_rgba(hex_color: str, alpha: int = 255) -> tuple:
+    """Convert hex color to RGBA tuple."""
+    r, g, b = _hex_to_rgb(hex_color)
+    return (r, g, b, alpha)
+
+
+async def _fetch_unsplash_photo(search_term: str, topic: str = "") -> bytes | None:
+    """Fetch a photo from Unsplash API search, sized for 1080x1350."""
+    # Use topic hash for consistent photo selection
+    seed = int(hashlib.md5((topic + search_term).encode()).hexdigest(), 16)
+
+    if UNSPLASH_ACCESS_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(
+                    "https://api.unsplash.com/search/photos",
+                    params={"query": search_term, "per_page": 10, "orientation": "portrait"},
+                    headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
+                )
+                if r.status_code == 200:
+                    results = r.json().get("results", [])
+                    if results:
+                        photo = results[seed % len(results)]
+                        url = photo["urls"]["regular"] + "&w=1080&h=1350&fit=crop"
+                        img_r = await client.get(url, timeout=20)
+                        if img_r.status_code == 200:
+                            return img_r.content
+        except Exception as e:
+            log.error(f"Unsplash API error: {e}")
+
+    return None
+
+
+async def _fetch_photo_for_slide(slide_type: str, topic: str = "") -> bytes | None:
+    """Fetch a background photo — try Unsplash API first, then fallback URLs."""
+    seed = int(hashlib.md5(topic.encode()).hexdigest(), 16)
+
+    # Try Unsplash API search
+    terms = UNSPLASH_SEARCH_TERMS.get(slide_type, UNSPLASH_SEARCH_TERMS["cover"])
+    term = terms[seed % len(terms)]
+    photo_bytes = await _fetch_unsplash_photo(term, topic)
+    if photo_bytes:
+        return photo_bytes
+
+    # Fallback to curated URLs
     photos = UNSPLASH_PHOTOS.get(slide_type, UNSPLASH_PHOTOS["cover"])
-    idx = int(hashlib.md5(topic.encode()).hexdigest(), 16) % len(photos)
-    return photos[idx]
+    url = photos[seed % len(photos)]
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(url)
+            if r.status_code == 200:
+                return r.content
+    except Exception as e:
+        log.error(f"Photo fetch fallback error: {e}")
+    return None
 
 
-async def _load_logo_b64(brand: str) -> str:
-    """Load the brand logo as a base64 data URI, cached in memory."""
-    if brand in _logo_cache:
+async def _load_logo_image(brand: str) -> Image.Image | None:
+    """Load the brand logo as a PIL Image, cached in memory."""
+    if brand in _logo_cache and _logo_cache[brand] is not None:
         return _logo_cache[brand]
-    # Try from Drive brand folder first
+
+    # Try local file first
+    logo_path = LOGO_PATHS.get(brand)
+    if logo_path:
+        full_path = os.path.join(os.path.dirname(__file__), logo_path)
+        if os.path.exists(full_path):
+            try:
+                img = Image.open(full_path).convert("RGBA")
+                _logo_cache[brand] = img
+                log.info(f"Loaded logo for {brand} from local file: {full_path}")
+                return img
+            except Exception as e:
+                log.error(f"Logo load error: {e}")
+
+    # Try from Drive
     folder_id = GDRIVE_MARKETING_BRAND_FOLDERS.get(brand)
     if folder_id and GDRIVE_API_KEY:
         files = await list_drive_files(folder_id)
@@ -513,26 +634,92 @@ async def _load_logo_b64(brand: str) -> str:
                         params={"alt": "media", "key": GDRIVE_API_KEY},
                     )
                     if r.status_code == 200:
-                        mime = logo_file.get("mimeType", "image/png")
-                        b64 = base64.b64encode(r.content).decode()
-                        _logo_cache[brand] = f"data:{mime};base64,{b64}"
+                        img = Image.open(io.BytesIO(r.content)).convert("RGBA")
+                        _logo_cache[brand] = img
                         log.info(f"Loaded logo for {brand} from Drive")
-                        return _logo_cache[brand]
+                        return img
             except Exception as e:
                 log.error(f"Logo fetch error: {e}")
-    # Fallback: empty (will show text-only logo)
-    _logo_cache[brand] = ""
-    return ""
+
+    _logo_cache[brand] = None
+    return None
 
 
-async def create_canva_slide(content: dict, slide_index: int, brand: str) -> bytes | None:
-    """Render a slide with real photos, real logos, and proper brand styling."""
-    try:
-        from playwright.async_api import async_playwright
-    except ImportError:
-        log.error("Playwright not installed")
-        return None
+def _draw_text_wrapped(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont,
+                       max_width: int, x: int, y: int, fill: tuple,
+                       align: str = "left", line_spacing: int = 8) -> int:
+    """Draw wrapped text and return the total height used."""
+    words = text.split()
+    lines = []
+    current_line = ""
+    for word in words:
+        test_line = f"{current_line} {word}".strip() if current_line else word
+        bbox = font.getbbox(test_line)
+        if bbox[2] - bbox[0] <= max_width:
+            current_line = test_line
+        else:
+            if current_line:
+                lines.append(current_line)
+            current_line = word
+    if current_line:
+        lines.append(current_line)
 
+    total_height = 0
+    for line in lines:
+        bbox = font.getbbox(line)
+        line_w = bbox[2] - bbox[0]
+        line_h = bbox[3] - bbox[1]
+        if align == "center":
+            draw.text((x + (max_width - line_w) // 2, y + total_height), line, font=font, fill=fill)
+        elif align == "right":
+            draw.text((x + max_width - line_w, y + total_height), line, font=font, fill=fill)
+        else:
+            draw.text((x, y + total_height), line, font=font, fill=fill)
+        total_height += line_h + line_spacing
+    return total_height
+
+
+def _apply_gradient_overlay(img: Image.Image, opacity_top: float = 0.25, opacity_bottom: float = 0.95) -> Image.Image:
+    """Apply a dark gradient overlay to an image (top to bottom)."""
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    for y in range(img.height):
+        progress = y / img.height
+        alpha = int((opacity_top + (opacity_bottom - opacity_top) * progress) * 255)
+        for x in range(img.width):
+            overlay.putpixel((x, y), (0, 0, 0, alpha))
+    # Use a more efficient approach with ImageDraw
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    for y in range(img.height):
+        progress = y / img.height
+        alpha = int((opacity_top + (opacity_bottom - opacity_top) * progress) * 255)
+        draw.line([(0, y), (img.width, y)], fill=(0, 0, 0, alpha))
+    return Image.alpha_composite(img.convert("RGBA"), overlay)
+
+
+def _add_watermark_logo(img: Image.Image, logo: Image.Image, opacity: float = 0.15) -> Image.Image:
+    """Add a faded centered watermark logo."""
+    # Resize logo to ~30% of image width
+    logo_w = int(img.width * 0.3)
+    ratio = logo_w / logo.width
+    logo_h = int(logo.height * ratio)
+    logo_resized = logo.resize((logo_w, logo_h), Image.LANCZOS)
+
+    # Apply opacity
+    if logo_resized.mode == "RGBA":
+        r, g, b, a = logo_resized.split()
+        a = a.point(lambda p: int(p * opacity))
+        logo_resized = Image.merge("RGBA", (r, g, b, a))
+
+    # Center on image
+    x = (img.width - logo_w) // 2
+    y = (img.height - logo_h) // 2
+    img.paste(logo_resized, (x, y), logo_resized)
+    return img
+
+
+async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> bytes | None:
+    """Render a slide using Pillow with real photos, logos, and brand styling."""
     cfg = BRANDS[brand]
     slides = content.get("slides", [])
     if slide_index >= len(slides):
@@ -540,156 +727,236 @@ async def create_canva_slide(content: dict, slide_index: int, brand: str) -> byt
     slide = slides[slide_index]
     topic = content.get("_topic", "")
 
-    logo_uri = await _load_logo_b64(brand)
-    html = _build_slide_html(slide, slide_index, cfg, content, logo_uri, topic)
+    W, H = 1080, 1350
+    accent = _hex_to_rgb(cfg["color_accent"])
+    accent_rgba = _hex_to_rgba(cfg["color_accent"])
+    primary = _hex_to_rgb(cfg["color_primary"])
+    white = (255, 255, 255)
+    white_75 = (255, 255, 255, 191)
+    white_35 = (255, 255, 255, 89)
 
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page(viewport={"width": 1080, "height": 1350})
-            await page.set_content(html, wait_until="networkidle")
-            await asyncio.sleep(2)  # let fonts + images load
-            screenshot = await page.screenshot(type="png", full_page=False)
-            await browser.close()
-            return screenshot
-    except Exception as e:
-        log.error(f"Playwright render error: {e}")
-        return None
+    logo = await _load_logo_image(brand)
 
+    if slide_index == 0:
+        # ── COVER SLIDE: full bleed photo + dark gradient + headline ──
+        photo_bytes = await _fetch_photo_for_slide("cover", topic)
+        if photo_bytes:
+            bg = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
+            bg = bg.resize((W, H), Image.LANCZOS)
+        else:
+            bg = Image.new("RGBA", (W, H), (*primary, 255))
 
-def _build_slide_html(slide: dict, index: int, cfg: dict, content: dict, logo_uri: str, topic: str) -> str:
-    """Generate brand-accurate HTML with real photos and logos."""
-    primary = cfg["color_primary"]
-    accent = cfg["color_accent"]
-    secondary = cfg.get("color_secondary", "#3b3b3b")
-    is_listr = cfg["name"] == "ListR.ae"
-    brand_name = "LISTR.AE" if is_listr else "NUCASSA"
-    website = cfg["website"]
+        # Dark gradient overlay: light at top, heavy at bottom
+        bg = _apply_gradient_overlay(bg, opacity_top=0.25, opacity_bottom=0.92)
 
-    logo_html = f'<img src="{logo_uri}" style="height:80px;width:auto;object-fit:contain;">' if logo_uri else f'<div style="font-family:Montserrat,sans-serif;font-weight:700;font-size:18px;color:{accent};letter-spacing:4px;">{brand_name}</div>'
-    logo_small = f'<img src="{logo_uri}" style="height:50px;width:auto;object-fit:contain;opacity:0.6;">' if logo_uri else f'<div style="font-family:Montserrat,sans-serif;font-weight:600;font-size:13px;color:{accent};letter-spacing:4px;opacity:0.5;">{brand_name}</div>'
+        # Watermark logo centre
+        if logo:
+            bg = _add_watermark_logo(bg, logo, opacity=0.15)
 
-    if index == 0:
-        # COVER SLIDE — real photo background + dark gradient overlay
-        headline = slide.get("headline", "")
+        draw = ImageDraw.Draw(bg)
+
+        # Small logo top centre
+        if logo:
+            logo_small = logo.copy()
+            lw = 120
+            lr = lw / logo_small.width
+            lh = int(logo_small.height * lr)
+            logo_small = logo_small.resize((lw, lh), Image.LANCZOS)
+            if logo_small.mode == "RGBA":
+                r, g, b, a = logo_small.split()
+                a = a.point(lambda p: int(p * 0.6))
+                logo_small = Image.merge("RGBA", (r, g, b, a))
+            bg.paste(logo_small, ((W - lw) // 2, 50), logo_small)
+
+        # Headline — massive bold white uppercase
+        headline = slide.get("headline", "").upper()
         subtext = slide.get("subtext", "")
-        photo_url = _pick_photo("cover", topic)
-        return f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Varta:wght@400;500&display=swap" rel="stylesheet">
-<style>
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ width:1080px; height:1350px; overflow:hidden; position:relative; font-family:'Montserrat',sans-serif; }}
-.bg {{ position:absolute; inset:0; background:url('{photo_url}') center/cover no-repeat; }}
-.overlay {{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.55) 40%, rgba(0,0,0,0.88) 75%, rgba(0,0,0,0.95) 100%); }}
-.logo {{ position:absolute; top:50px; left:50%; transform:translateX(-50%); z-index:10; }}
-.content {{ position:absolute; bottom:0; left:0; right:0; padding:0 70px 90px; z-index:5; }}
-.headline {{ font-weight:800; font-size:68px; line-height:1.08; color:#fff; text-transform:uppercase; letter-spacing:-1px; margin-bottom:20px; }}
-.accent {{ color:{accent}; }}
-.subtext {{ font-family:'Varta',sans-serif; font-size:26px; color:rgba(255,255,255,0.75); line-height:1.4; margin-bottom:40px; }}
-.swipe {{ display:inline-flex; align-items:center; justify-content:center; width:52px; height:52px; border:2px solid {accent}; border-radius:50%; color:{accent}; font-size:24px; }}
-</style></head>
-<body>
-<div class="bg"></div>
-<div class="overlay"></div>
-<div class="logo">{logo_small}</div>
-<div class="content">
-  <div class="headline">{headline}</div>
-  <div class="subtext">{subtext}</div>
-  <div class="swipe">→</div>
-</div>
-</body></html>"""
+        font_h = FONT_HEADLINE(68)
+        font_sub = FONT_BODY(26)
 
-    elif index == 1:
-        # DATA SLIDE — dark photo bg + stats overlay
+        # Draw headline from bottom
+        padding_x = 70
+        max_w = W - padding_x * 2
+        # Calculate headline height first
+        h_height = _draw_text_wrapped(ImageDraw.Draw(Image.new("RGBA", (1, 1))), headline, font_h, max_w, 0, 0, white)
+
+        text_y = H - 90 - 52 - 40  # bottom padding - swipe arrow - gap
+        if subtext:
+            sub_height = _draw_text_wrapped(ImageDraw.Draw(Image.new("RGBA", (1, 1))), subtext, font_sub, max_w, 0, 0, white_75)
+            text_y -= sub_height
+        text_y -= h_height
+
+        _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_y, white)
+        text_y += h_height
+        if subtext:
+            _draw_text_wrapped(draw, subtext, font_sub, max_w, padding_x, text_y, (*white[:3], 191))
+
+        # Swipe arrow
+        arrow_y = H - 90 - 52
+        draw.ellipse([padding_x, arrow_y, padding_x + 52, arrow_y + 52], outline=accent, width=2)
+        arrow_font = FONT_HEADLINE(24)
+        draw.text((padding_x + 16, arrow_y + 10), "→", font=arrow_font, fill=accent)
+
+        buf = io.BytesIO()
+        bg.save(buf, format="PNG", quality=95)
+        return buf.getvalue()
+
+    elif slide_index == 1:
+        # ── DATA SLIDE: dark photo bg + 3 stats ──
         stats = slide.get("stats", ["—", "—", "—"])
         while len(stats) < 3:
             stats.append("—")
+
         def split_stat(s):
             parts = s.split(":", 1)
             return (parts[1].strip(), parts[0].strip()) if len(parts) == 2 else (s, "")
-        s1v, s1l = split_stat(stats[0])
-        s2v, s2l = split_stat(stats[1])
-        s3v, s3l = split_stat(stats[2])
-        photo_url = _pick_photo("data", topic)
 
-        return f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Varta:wght@400;500&display=swap" rel="stylesheet">
-<style>
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ width:1080px; height:1350px; overflow:hidden; position:relative; font-family:'Montserrat',sans-serif; }}
-.bg {{ position:absolute; inset:0; background:url('{photo_url}') center/cover no-repeat; }}
-.overlay {{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.75) 50%, rgba(0,0,0,0.85) 100%); }}
-.logo {{ position:absolute; top:50px; left:50%; transform:translateX(-50%); z-index:10; }}
-.stats {{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:60px; z-index:5; padding:140px 80px 80px; }}
-.stat {{ text-align:center; }}
-.stat-val {{ font-weight:800; font-size:96px; line-height:1; color:{accent}; letter-spacing:-2px; }}
-.stat-lbl {{ font-family:'Varta',sans-serif; font-weight:500; font-size:24px; color:#fff; text-transform:uppercase; letter-spacing:4px; margin-top:10px; }}
-.divider {{ width:100px; height:1px; background:rgba(205,161,127,0.25); }}
-</style></head>
-<body>
-<div class="bg"></div>
-<div class="overlay"></div>
-<div class="logo">{logo_small}</div>
-<div class="stats">
-  <div class="stat"><div class="stat-val">{s1v}</div><div class="stat-lbl">{s1l}</div></div>
-  <div class="divider"></div>
-  <div class="stat"><div class="stat-val">{s2v}</div><div class="stat-lbl">{s2l}</div></div>
-  <div class="divider"></div>
-  <div class="stat"><div class="stat-val">{s3v}</div><div class="stat-lbl">{s3l}</div></div>
-</div>
-</body></html>"""
+        photo_bytes = await _fetch_photo_for_slide("data", topic)
+        if photo_bytes:
+            bg = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
+            bg = bg.resize((W, H), Image.LANCZOS)
+        else:
+            bg = Image.new("RGBA", (W, H), (*primary, 255))
+
+        bg = _apply_gradient_overlay(bg, opacity_top=0.85, opacity_bottom=0.85)
+
+        if logo:
+            bg = _add_watermark_logo(bg, logo, opacity=0.12)
+
+        # Small logo top centre
+        draw = ImageDraw.Draw(bg)
+        if logo:
+            logo_small = logo.copy()
+            lw = 120
+            lr = lw / logo_small.width
+            lh = int(logo_small.height * lr)
+            logo_small = logo_small.resize((lw, lh), Image.LANCZOS)
+            if logo_small.mode == "RGBA":
+                r, g, b, a = logo_small.split()
+                a = a.point(lambda p: int(p * 0.6))
+                logo_small = Image.merge("RGBA", (r, g, b, a))
+            bg.paste(logo_small, ((W - lw) // 2, 50), logo_small)
+
+        font_val = FONT_HEADLINE(90)
+        font_lbl = FONT_BODY(24)
+        stat_gap = 60
+        divider_color = _hex_to_rgba(cfg["color_accent"], 64)
+
+        # Calculate total height for centering
+        stat_heights = []
+        for s in stats:
+            val, lbl = split_stat(s)
+            val_h = font_val.getbbox(val)[3] - font_val.getbbox(val)[1]
+            lbl_h = font_lbl.getbbox(lbl)[3] - font_lbl.getbbox(lbl)[1] if lbl else 0
+            stat_heights.append(val_h + lbl_h + 10)
+        total_h = sum(stat_heights) + stat_gap * 2 + 2  # 2 dividers
+        start_y = (H - total_h) // 2 + 40  # offset down slightly for logo
+
+        for i, s in enumerate(stats):
+            val, lbl = split_stat(s)
+            # Value
+            val_bbox = font_val.getbbox(val)
+            val_w = val_bbox[2] - val_bbox[0]
+            draw.text(((W - val_w) // 2, start_y), val, font=font_val, fill=accent)
+            start_y += val_bbox[3] - val_bbox[1] + 10
+            # Label
+            if lbl:
+                lbl_upper = lbl.upper()
+                lbl_bbox = font_lbl.getbbox(lbl_upper)
+                lbl_w = lbl_bbox[2] - lbl_bbox[0]
+                draw.text(((W - lbl_w) // 2, start_y), lbl_upper, font=font_lbl, fill=white)
+                start_y += lbl_bbox[3] - lbl_bbox[1]
+            # Divider
+            if i < 2:
+                start_y += stat_gap // 2
+                draw.line([(W // 2 - 50, start_y), (W // 2 + 50, start_y)], fill=divider_color, width=1)
+                start_y += stat_gap // 2
+
+        buf = io.BytesIO()
+        bg.save(buf, format="PNG", quality=95)
+        return buf.getvalue()
 
     else:
-        # CTA SLIDE — solid dark + large logo + CTA
-        headline = slide.get("headline", "")
+        # ── CTA SLIDE: dark bg + headline + CTA + logo ──
+        headline = slide.get("headline", "").upper()
         cta_line = slide.get("cta_line", cfg["cta"])
-        photo_url = _pick_photo("cta", topic)
+        website = cfg["website"]
 
-        return f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Varta:wght@400;500&display=swap" rel="stylesheet">
-<style>
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ width:1080px; height:1350px; overflow:hidden; position:relative; font-family:'Montserrat',sans-serif; }}
-.bg {{ position:absolute; inset:0; background:url('{photo_url}') center/cover no-repeat; }}
-.overlay {{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.88) 50%, rgba(0,0,0,0.95) 100%); }}
-.wrap {{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:80px; z-index:5; }}
-.headline {{ font-weight:800; font-size:60px; line-height:1.12; color:#fff; text-transform:uppercase; letter-spacing:-1px; margin-bottom:36px; }}
-.cta {{ font-family:'Varta',sans-serif; font-weight:500; font-size:30px; color:{accent}; margin-bottom:70px; letter-spacing:1px; }}
-.logo-block {{ display:flex; flex-direction:column; align-items:center; gap:20px; }}
-.website {{ font-family:'Varta',sans-serif; font-size:18px; color:rgba(255,255,255,0.35); letter-spacing:2px; margin-top:10px; }}
-</style></head>
-<body>
-<div class="bg"></div>
-<div class="overlay"></div>
-<div class="wrap">
-  <div class="headline">{headline}</div>
-  <div class="cta">{cta_line}</div>
-  <div class="logo-block">
-    {logo_html}
-    <div class="website">{website}</div>
-  </div>
-</div>
-</body></html>"""
+        photo_bytes = await _fetch_photo_for_slide("cta", topic)
+        if photo_bytes:
+            bg = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
+            bg = bg.resize((W, H), Image.LANCZOS)
+            bg = _apply_gradient_overlay(bg, opacity_top=0.92, opacity_bottom=0.95)
+        else:
+            bg = Image.new("RGBA", (W, H), (*primary, 255))
+
+        draw = ImageDraw.Draw(bg)
+
+        font_h = FONT_HEADLINE(58)
+        font_cta = FONT_BODY(30)
+        font_web = FONT_BODY(18)
+        padding_x = 80
+        max_w = W - padding_x * 2
+
+        # Calculate layout for centering
+        h_height = _draw_text_wrapped(ImageDraw.Draw(Image.new("RGBA", (1, 1))), headline, font_h, max_w, 0, 0, white)
+        cta_bbox = font_cta.getbbox(cta_line)
+        cta_h = cta_bbox[3] - cta_bbox[1]
+        logo_block_h = 100  # logo + website
+        total_h = h_height + 36 + cta_h + 70 + logo_block_h
+        start_y = (H - total_h) // 2
+
+        # Headline
+        _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, start_y, white, align="center")
+        start_y += h_height + 36
+
+        # CTA line
+        cta_w = cta_bbox[2] - cta_bbox[0]
+        draw.text(((W - cta_w) // 2, start_y), cta_line, font=font_cta, fill=accent)
+        start_y += cta_h + 70
+
+        # Logo
+        if logo:
+            logo_big = logo.copy()
+            lw = 180
+            lr = lw / logo_big.width
+            lh = int(logo_big.height * lr)
+            logo_big = logo_big.resize((lw, lh), Image.LANCZOS)
+            bg.paste(logo_big, ((W - lw) // 2, start_y), logo_big)
+            start_y += lh + 20
+        else:
+            brand_name = "LISTR.AE" if cfg["name"] == "ListR.ae" else "NUCASSA"
+            brand_font = FONT_HEADLINE(18)
+            bn_bbox = brand_font.getbbox(brand_name)
+            bn_w = bn_bbox[2] - bn_bbox[0]
+            draw.text(((W - bn_w) // 2, start_y), brand_name, font=brand_font, fill=accent)
+            start_y += 40
+
+        # Website
+        web_bbox = font_web.getbbox(website)
+        web_w = web_bbox[2] - web_bbox[0]
+        draw.text(((W - web_w) // 2, start_y), website, font=font_web, fill=white_35)
+
+        buf = io.BytesIO()
+        bg.save(buf, format="PNG", quality=95)
+        return buf.getvalue()
 
 
 async def render_carousel_images(content: dict, brand: str) -> list[bytes]:
-    """Render all 3 carousel slides and return list of PNG bytes."""
+    """Render all 3 carousel slides using Pillow and return list of PNG bytes."""
     images = []
     slides = content.get("slides", [])
     for i in range(len(slides)):
-        img = await create_canva_slide(content, i, brand)
+        img = await create_slide_pillow(content, i, brand)
         if img:
             images.append(img)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.3)
     return images
 
 
 async def render_static_image(content: dict, brand: str) -> bytes | None:
-    """Render a single static post image."""
-    return await create_canva_slide(content, 0, brand)
+    """Render a single static post image using Pillow."""
+    return await create_slide_pillow(content, 0, brand)
 
 
 # ── META GRAPH API ────────────────────────────────────────────────────────────
