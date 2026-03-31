@@ -58,6 +58,7 @@ LI_NUCASSA_RE_PAGE  = os.getenv("LI_NUCASSA_RE_PAGE", "90919312")
 LI_HOLDINGS_PAGE    = os.getenv("LI_HOLDINGS_PAGE", "109941216")
 LI_ACCESS_TOKEN     = os.getenv("LI_ACCESS_TOKEN", "")       # set after first OAuth
 LI_REFRESH_TOKEN    = os.getenv("LI_REFRESH_TOKEN", "")
+_li_person_id       = ""  # fetched during OAuth
 LI_TOKEN_EXPIRY     = int(os.getenv("LI_TOKEN_EXPIRY", "0"))
 
 # Canva
@@ -201,6 +202,7 @@ BRANDS = {
 
 # ── IN-MEMORY STATE ───────────────────────────────────────────────────────────
 pending_approvals: dict = {}   # telegram_msg_id → {content, brand, batch_id, idx}
+_temp_images: dict = {}        # image_id → bytes (temporary image hosting for IG uploads)
 pending_batches: dict = {}     # batch_id → list[content_dict]
 last_batch: dict = {}          # brand → list[content_dict]
 li_oauth_states: dict = {}     # state → brand (for OAuth flow)
@@ -479,22 +481,20 @@ UNSPLASH_SEARCH_TERMS = {
 }
 
 # Fallback curated URLs if Unsplash API search fails
-# Curated Dubai night skyline photos — wide/aerial, no visible signage, high quality
+# Curated Dubai golden hour/sunset photos — wide, editorial quality
 UNSPLASH_PHOTOS = {
     "cover": [
-        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1080&h=1350&fit=crop&q=90",   # Dubai skyline wide
-        "https://images.unsplash.com/photo-1546412414-e1885259563a?w=1080&h=1350&fit=crop&q=90",       # Dubai Marina night wide
-        "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=1080&h=1350&fit=crop&q=90",    # Dubai skyline sunset
-        "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=1080&h=1350&fit=crop&q=90",    # Dubai Marina from above
-        "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=1080&h=1350&fit=crop&q=90",       # Burj Khalifa distant
+        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=2000&h=2500&fit=crop&q=95",    # Dubai skyline sunset
+        "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=2000&h=2500&fit=crop&q=95",    # Dubai golden hour
+        "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=2000&h=2500&fit=crop&q=95",    # Dubai Marina aerial
+        "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=2000&h=2500&fit=crop&q=95",    # Dubai aerial warm
+        "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=2000&h=2500&fit=crop&q=95",       # Burj Khalifa golden
     ],
     "data": [
-        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1080&h=1350&fit=crop&q=90",    # Dark abstract building
-        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=1080&h=1350&fit=crop&q=90",       # Dark skyscraper upward
-        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1080&h=1350&fit=crop&q=90",    # Dubai skyline
-        "https://images.unsplash.com/photo-1546412414-e1885259563a?w=1080&h=1350&fit=crop&q=90",       # Dubai Marina night
+        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=2000&h=2500&fit=crop&q=95",    # Dark abstract building
+        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=2000&h=2500&fit=crop&q=95",       # Dark skyscraper upward
     ],
-    "cta": [],  # CTA uses solid #1C1C1C background
+    "cta": [],
 }
 
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY", "")
@@ -580,10 +580,62 @@ async def _fetch_unsplash_photo(search_term: str, topic: str = "") -> bytes | No
 
 
 async def _fetch_photo_for_slide(slide_type: str, topic: str = "") -> bytes | None:
-    """Fetch a background photo from curated Dubai night shots."""
+    """Fetch a background photo — Unsplash API search first, curated fallback."""
     seed = int(hashlib.md5(topic.encode()).hexdigest(), 16)
 
-    # Use curated URLs only — guaranteed clean, dark, high quality Dubai shots
+    # Build a search query from the topic — different per slide type
+    if UNSPLASH_ACCESS_KEY and slide_type != "cta":
+        topic_words = topic.lower()
+        # Data slides use darker/abstract photos to contrast with cover
+        if slide_type == "data":
+            if any(w in topic_words for w in ["marina", "yacht"]):
+                search = "Dubai marina aerial dark"
+            elif any(w in topic_words for w in ["palm", "jumeirah"]):
+                search = "Dubai architecture modern dark"
+            else:
+                search = "Dubai skyscraper abstract dark"
+            photo_bytes = await _fetch_unsplash_photo(search, topic)
+            if photo_bytes:
+                return photo_bytes
+            photos = UNSPLASH_PHOTOS.get("data", UNSPLASH_PHOTOS["cover"])
+            if not photos:
+                return None
+            url = photos[seed % len(photos)]
+            try:
+                async with httpx.AsyncClient(timeout=20) as client:
+                    r = await client.get(url)
+                    if r.status_code == 200:
+                        return r.content
+            except Exception as e:
+                log.error(f"Photo fetch error: {e}")
+            return None
+
+        # Cover slides use golden hour/sunset
+        topic_words = topic.lower()
+        if any(w in topic_words for w in ["marina", "yacht", "waterfront"]):
+            search = "Dubai marina sunset golden hour"
+        elif any(w in topic_words for w in ["downtown", "burj", "khalifa"]):
+            search = "Burj Khalifa sunset golden skyline"
+        elif any(w in topic_words for w in ["palm", "jumeirah", "beach", "coast"]):
+            search = "Palm Jumeirah Dubai aerial sunset"
+        elif any(w in topic_words for w in ["invest", "capital", "money", "fund"]):
+            search = "Dubai skyline golden hour aerial"
+        elif any(w in topic_words for w in ["luxury", "premium", "villa"]):
+            search = "Dubai luxury skyline sunset"
+        elif any(w in topic_words for w in ["yield", "rental", "return"]):
+            search = "Dubai towers sunset golden"
+        elif any(w in topic_words for w in ["construction", "built", "develop"]):
+            search = "Dubai construction skyline sunset"
+        elif any(w in topic_words for w in ["market", "transaction", "record"]):
+            search = "Dubai city aerial sunset panorama"
+        else:
+            search = "Dubai skyline sunset golden hour"
+
+        photo_bytes = await _fetch_unsplash_photo(search, topic)
+        if photo_bytes:
+            return photo_bytes
+
+    # Fallback to curated URLs
     photos = UNSPLASH_PHOTOS.get(slide_type, UNSPLASH_PHOTOS["cover"])
     if not photos:
         return None
@@ -734,15 +786,15 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
 
     if slide_index == 0:
         # ── COVER SLIDE: sharp photo + dark gradient + headline ──
-        photo_bytes = await _fetch_photo_for_slide("cover", topic)
+        photo_bytes = await _fetch_photo_for_slide("cover", topic + "_slide1")
         if photo_bytes:
             bg = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
             bg = bg.resize((W, H), Image.LANCZOS)
         else:
             bg = Image.new("RGBA", (W, H), (*primary, 255))
 
-        # Dark gradient: transparent top fading to near-black bottom where text sits
-        bg = _apply_gradient_overlay(bg, opacity_top=0.20, opacity_bottom=0.85)
+        # Minimal gradient: photo dominates, only darken bottom 35% where text sits
+        bg = _apply_gradient_overlay(bg, opacity_top=0.0, opacity_bottom=0.60)
 
         # Watermark logo centre
         draw = ImageDraw.Draw(bg)
@@ -785,9 +837,9 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         text_y -= h_height
         headline_y = text_y
 
-        _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, headline_y, white)
+        _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, headline_y, white, align="center")
         if subtext:
-            _draw_text_wrapped(draw, subtext, font_sub, max_w, padding_x, sub_y, (*white[:3], 191))
+            _draw_text_wrapped(draw, subtext, font_sub, max_w, padding_x, sub_y, (*white[:3], 191), align="center")
 
         # Swipe arrow
         arrow_y = H - 90 - 52
@@ -809,7 +861,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
             parts = s.split(":", 1)
             return (parts[1].strip(), parts[0].strip()) if len(parts) == 2 else (s, "")
 
-        photo_bytes = await _fetch_photo_for_slide("data", topic)
+        photo_bytes = await _fetch_photo_for_slide("data", topic + "_slide2")
         if photo_bytes:
             bg = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
             bg = bg.resize((W, H), Image.LANCZOS)
@@ -817,7 +869,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
             bg = Image.new("RGBA", (W, H), (*primary, 255))
 
         # Heavy uniform overlay so stats pop cleanly against dark bg
-        bg = _apply_gradient_overlay(bg, opacity_top=0.75, opacity_bottom=0.75)
+        bg = _apply_gradient_overlay(bg, opacity_top=0.55, opacity_bottom=0.55)
 
         # Logo top centre only (no watermark)
         draw = ImageDraw.Draw(bg)
@@ -964,41 +1016,73 @@ async def render_static_image(content: dict, brand: str) -> bytes | None:
 
 # ── META GRAPH API ────────────────────────────────────────────────────────────
 
+_page_token_cache: dict = {}
+
+
 async def get_page_token(page_id: str) -> str | None:
-    """Get a Page Access Token for a specific Facebook Page."""
-    url = f"https://graph.facebook.com/v18.0/{page_id}"
-    params = {"fields": "access_token", "access_token": META_SYSTEM_TOKEN}
+    """Get a Page Access Token via the system user's /accounts endpoint."""
+    if page_id in _page_token_cache:
+        return _page_token_cache[page_id]
     try:
+        # Get system user ID first
         async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(url, params=params)
-            return r.json().get("access_token")
+            me = await client.get("https://graph.facebook.com/v18.0/me",
+                                  params={"access_token": META_SYSTEM_TOKEN})
+            user_id = me.json().get("id")
+            if not user_id:
+                return None
+            # List pages with their tokens
+            r = await client.get(f"https://graph.facebook.com/v18.0/{user_id}/accounts",
+                                 params={"access_token": META_SYSTEM_TOKEN})
+            for page in r.json().get("data", []):
+                if page["id"] == page_id:
+                    _page_token_cache[page_id] = page["access_token"]
+                    log.info(f"Got page token for {page['name']}")
+                    return page["access_token"]
     except Exception as e:
         log.error(f"Page token error: {e}")
     return None
 
 
+async def _get_public_image_url(image_bytes: bytes) -> str | None:
+    """Host image on Mark's server and return a public URL via Cloudflare tunnel."""
+    try:
+        # Convert PNG to JPEG for Instagram compatibility
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=92)
+        jpeg_bytes = buf.getvalue()
+
+        image_id = str(uuid.uuid4())[:12]
+        _temp_images[image_id] = jpeg_bytes
+        public_url = f"{RAILWAY_URL}/img/{image_id}"
+        log.info(f"Hosting image at {public_url} ({len(jpeg_bytes)} bytes)")
+        return public_url
+    except Exception as e:
+        log.error(f"Public URL generation error: {e}")
+    return None
+
+
 async def upload_image_to_ig(ig_account_id: str, image_bytes: bytes, caption: str, is_carousel_item: bool = False) -> str | None:
     """Upload image to Instagram as a container. Returns container ID."""
-    # Upload image bytes to a temporary hosting solution
-    # Instagram requires a public URL — we use the image upload endpoint
-    upload_url = f"https://graph.facebook.com/v18.0/{ig_account_id}/media"
+    # Instagram requires a public URL — upload to Telegram first to get one
+    image_url = await _get_public_image_url(image_bytes)
+    if not image_url:
+        log.error("Could not get public URL for IG upload")
+        return None
 
-    # Encode image as base64 data URL isn't supported — need public URL
-    # Upload to Facebook's CDN first via the media upload endpoint
+    upload_url = f"https://graph.facebook.com/v18.0/{ig_account_id}/media"
     params = {
         "access_token": META_SYSTEM_TOKEN,
-        "caption": caption if not is_carousel_item else "",
+        "image_url": image_url,
         "is_carousel_item": "true" if is_carousel_item else "false",
     }
+    if caption and not is_carousel_item:
+        params["caption"] = caption
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            # Post image bytes directly
-            r = await client.post(
-                upload_url,
-                params=params,
-                files={"image": ("slide.png", image_bytes, "image/png")},
-            )
+            r = await client.post(upload_url, params=params)
             data = r.json()
             if "id" in data:
                 return data["id"]
@@ -1050,17 +1134,26 @@ async def publish_ig_single(ig_account_id: str, image_bytes: bytes, caption: str
 
 
 async def publish_facebook(page_id: str, image_bytes: bytes, caption: str) -> dict:
-    """Post an image to a Facebook Page."""
+    """Post an image to a Facebook Page using page access token."""
     page_token = await get_page_token(page_id)
     if not page_token:
         return {"error": "Could not get page token"}
+
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=92)
+        jpeg_bytes = buf.getvalue()
+    except Exception:
+        jpeg_bytes = image_bytes
+
     url = f"https://graph.facebook.com/v18.0/{page_id}/photos"
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
                 url,
-                params={"access_token": page_token, "caption": caption},
-                files={"source": ("post.png", image_bytes, "image/png")},
+                params={"access_token": page_token, "message": caption},
+                files={"source": ("post.jpg", jpeg_bytes, "image/jpeg")},
             )
             return r.json()
     except Exception as e:
@@ -1089,7 +1182,7 @@ async def linkedin_auth_start():
 @app.get("/linkedin/callback")
 async def linkedin_auth_callback(code: str = None, state: str = None, error: str = None):
     """Handle LinkedIn OAuth callback and store access token."""
-    global LI_ACCESS_TOKEN, LI_REFRESH_TOKEN, LI_TOKEN_EXPIRY
+    global LI_ACCESS_TOKEN, LI_REFRESH_TOKEN, LI_TOKEN_EXPIRY, _li_person_id
 
     if error:
         await send_telegram(f"❌ LinkedIn auth failed: {error}")
@@ -1435,7 +1528,7 @@ async def _get_drive_upload_token() -> str | None:
         header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "typ": "JWT"}).encode()).rstrip(b"=")
         claims = {
             "iss": sa["client_email"],
-            "scope": "https://www.googleapis.com/auth/drive.file",
+            "scope": "https://www.googleapis.com/auth/drive",
             "aud": sa["token_uri"],
             "iat": now,
             "exp": now + 3600,
@@ -1700,18 +1793,13 @@ async def handle_callback(update: dict):
         pending_approvals.pop(msg_id, None)
 
     elif action in ("regen_single", "regen_one"):
-        await answer_callback(cb_id, "Regenerating...")
+        await answer_callback(cb_id, "Regenerating with new photos...")
         pending_approvals.pop(msg_id, None)
         topic = content.get("_topic", "")
         ct = content.get("_content_type", "carousel")
-        breaking = content.get("_breaking", False)
-        new = await generate_single(brand, ct, topic)
-        if new:
-            if breaking:
-                new["_breaking"] = True
-            await send_approval_request(new, brand, batch_id, idx)
-        else:
-            await send_telegram("⚠️ Regeneration failed.")
+        # Add timestamp to force different photo selection
+        new_topic = topic + f" _v{int(time.time())}"
+        await _run_single(brand, ct, new_topic)
 
     elif action == "reject_single":
         await answer_callback(cb_id, "Rejected")
@@ -1720,6 +1808,18 @@ async def handle_callback(update: dict):
 
 
 # ── FASTAPI ENDPOINTS (Alex integration) ─────────────────────────────────────
+
+from fastapi.responses import Response
+
+
+@app.get("/img/{image_id}")
+async def serve_temp_image(image_id: str):
+    """Serve a temporary image for Instagram upload."""
+    img_bytes = _temp_images.get(image_id)
+    if not img_bytes:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return Response(content=img_bytes, media_type="image/jpeg")
+
 
 @app.get("/")
 async def health():
@@ -1812,6 +1912,8 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
     if not topic or not topic.strip():
         await send_telegram("⚠️ No topic provided — Alex must provide the content angle. Use Alex to generate content.")
         return
+    # Track for regeneration
+    _last_render.update({"brand": brand, "content_type": content_type, "topic": topic})
     await send_telegram(f"_Generating {BRANDS[brand]['name']} {content_type}..._")
     content = await generate_single(brand, content_type, topic)
     if not content:
@@ -1838,13 +1940,16 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
     content["_rendered_images_b64"] = [base64.b64encode(img).decode() for img in rendered_images]
     # Show caption + approve/reject buttons — all posts go at 6pm Dubai
     cap = content.get("caption_instagram", "")[:300]
+    # Sanitize markdown characters that break Telegram
+    safe_cap = cap.replace("*", "").replace("_", "").replace("`", "").replace("[", "").replace("]", "")
+    brand_name = BRANDS[brand]["name"]
     markup = {"inline_keyboard": [
         [{"text": "✅ Approve", "callback_data": f"approve_single|{brand}"},
          {"text": "❌ Reject", "callback_data": f"reject_single|{brand}"}],
         [{"text": "🔄 Regenerate", "callback_data": f"regen_single|{brand}||"}],
     ]}
     msg = await send_telegram(
-        f"*{BRANDS[brand]['name']}*\n\n{cap}\n\n_Tap Approve to schedule for 6pm Dubai. Nothing posts until you approve._",
+        f"{brand_name}\n\n{safe_cap}\n\nTap Approve to post. Nothing goes live until you approve.",
         reply_markup=markup
     )
     if msg.get("result", {}).get("message_id"):
@@ -1909,6 +2014,10 @@ async def _run_pdf_post(brand: str, content_type: str, pdf_name: str):
         await send_telegram("⚠️ PDF content generation failed.")
 
 
+# ── LAST RENDER TRACKING (for regeneration) ──────────────────────────────────
+_last_render: dict = {}  # {brand, content_type, topic}
+
+
 # ── TELEGRAM LISTENER ─────────────────────────────────────────────────────────
 
 async def telegram_listener():
@@ -1922,6 +2031,27 @@ async def telegram_listener():
                 offset = update["update_id"] + 1
                 if "callback_query" in update:
                     await handle_callback(update)
+                    continue
+                # Handle direct messages from GG
+                msg = update.get("message", {})
+                chat_id = str(msg.get("chat", {}).get("id", ""))
+                text = msg.get("text", "").strip()
+                if not text or chat_id != str(TELEGRAM_CHAT_ID):
+                    continue
+                text_lower = text.lower()
+                # Regenerate with different photos
+                if any(w in text_lower for w in ["regenerate", "different photo", "new photo", "different background", "redo", "try again", "new render"]):
+                    if _last_render:
+                        await send_telegram("_Regenerating with different photos..._")
+                        # Add random suffix to force different photo selection
+                        new_topic = _last_render["topic"] + f" _v{int(time.time())}"
+                        await _run_single(_last_render["brand"], _last_render["content_type"], new_topic)
+                    else:
+                        await send_telegram("No previous render to regenerate. Ask Alex for content first.")
+                elif any(w in text_lower for w in ["darker", "too light", "more dark"]):
+                    await send_telegram("Got it — noted for next render. Say 'regenerate' and I'll try again.")
+                elif any(w in text_lower for w in ["lighter", "too dark", "brighter"]):
+                    await send_telegram("Got it — noted for next render. Say 'regenerate' and I'll try again.")
         except Exception as e:
             log.error(f"Mark listener error: {e}")
             await asyncio.sleep(5)
