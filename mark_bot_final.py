@@ -1,6 +1,6 @@
 """
 Mark — AI Marketing Bot (Final)
-Powered by Claude API | Playwright/Canva | Meta Graph API | LinkedIn API
+Powered by Claude API | Pillow | Meta Graph API | LinkedIn API
 Google Drive PDF Reader | Telegram | FastAPI (Alex integration)
 
 Brands:
@@ -14,6 +14,8 @@ Architecture:
   - Mark sends Telegram previews to GG for approval
   - GG approves/rejects via Telegram inline buttons only
 """
+
+from __future__ import annotations
 
 import os
 import json
