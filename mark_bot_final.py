@@ -466,37 +466,35 @@ import textwrap
 _logo_cache: dict = {}  # brand → PIL Image
 
 LOGO_PATHS = {
-    "nucassa_re": "logo_nucassa.jpg",
-    "nucassa_holdings": "logo_nucassa.jpg",
+    "nucassa_re": "logo_nucassa.png",
+    "nucassa_holdings": "logo_nucassa.png",
     "listr": "logo_listr.png",
 }
 
 # Unsplash search terms per slide type
 UNSPLASH_SEARCH_TERMS = {
-    "cover": ["Dubai skyline night", "Dubai marina aerial", "Dubai architecture luxury"],
-    "data": ["Dubai skyscraper dark", "modern architecture dark", "Dubai buildings night"],
-    "cta": ["dark minimal architecture", "luxury dark interior"],
+    "cover": ["Dubai skyline night lights", "Dubai marina night lights", "Dubai downtown night aerial", "Dubai night city lights"],
+    "data": ["Dubai night skyline lights", "Dubai dark cityscape night", "Dubai buildings night lights aerial"],
+    "cta": [],
 }
 
 # Fallback curated URLs if Unsplash API search fails
+# Curated Dubai night skyline photos — wide/aerial, no visible signage, high quality
 UNSPLASH_PHOTOS = {
     "cover": [
-        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1080&h=1350&fit=crop",
-        "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=1080&h=1350&fit=crop",
-        "https://images.unsplash.com/photo-1546412414-e1885259563a?w=1080&h=1350&fit=crop",
-        "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=1080&h=1350&fit=crop",
-        "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=1080&h=1350&fit=crop",
+        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1080&h=1350&fit=crop&q=90",   # Dubai skyline wide
+        "https://images.unsplash.com/photo-1546412414-e1885259563a?w=1080&h=1350&fit=crop&q=90",       # Dubai Marina night wide
+        "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=1080&h=1350&fit=crop&q=90",    # Dubai skyline sunset
+        "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=1080&h=1350&fit=crop&q=90",    # Dubai Marina from above
+        "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=1080&h=1350&fit=crop&q=90",       # Burj Khalifa distant
     ],
     "data": [
-        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1080&h=1350&fit=crop",
-        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=1080&h=1350&fit=crop",
-        "https://images.unsplash.com/photo-1524673450801-b5aa9b621b76?w=1080&h=1350&fit=crop",
-        "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1080&h=1350&fit=crop",
+        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1080&h=1350&fit=crop&q=90",    # Dark abstract building
+        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=1080&h=1350&fit=crop&q=90",       # Dark skyscraper upward
+        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1080&h=1350&fit=crop&q=90",    # Dubai skyline
+        "https://images.unsplash.com/photo-1546412414-e1885259563a?w=1080&h=1350&fit=crop&q=90",       # Dubai Marina night
     ],
-    "cta": [
-        "https://images.unsplash.com/photo-1496568816309-51d7c20e3b21?w=1080&h=1350&fit=crop",
-        "https://images.unsplash.com/photo-1545893835-abaa50cbe628?w=1080&h=1350&fit=crop",
-    ],
+    "cta": [],  # CTA uses solid #1C1C1C background
 }
 
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY", "")
@@ -582,18 +580,13 @@ async def _fetch_unsplash_photo(search_term: str, topic: str = "") -> bytes | No
 
 
 async def _fetch_photo_for_slide(slide_type: str, topic: str = "") -> bytes | None:
-    """Fetch a background photo — try Unsplash API first, then fallback URLs."""
+    """Fetch a background photo from curated Dubai night shots."""
     seed = int(hashlib.md5(topic.encode()).hexdigest(), 16)
 
-    # Try Unsplash API search
-    terms = UNSPLASH_SEARCH_TERMS.get(slide_type, UNSPLASH_SEARCH_TERMS["cover"])
-    term = terms[seed % len(terms)]
-    photo_bytes = await _fetch_unsplash_photo(term, topic)
-    if photo_bytes:
-        return photo_bytes
-
-    # Fallback to curated URLs
+    # Use curated URLs only — guaranteed clean, dark, high quality Dubai shots
     photos = UNSPLASH_PHOTOS.get(slide_type, UNSPLASH_PHOTOS["cover"])
+    if not photos:
+        return None
     url = photos[seed % len(photos)]
     try:
         async with httpx.AsyncClient(timeout=20) as client:
@@ -740,7 +733,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
     logo = await _load_logo_image(brand)
 
     if slide_index == 0:
-        # ── COVER SLIDE: full bleed photo + dark gradient + headline ──
+        # ── COVER SLIDE: sharp photo + dark gradient + headline ──
         photo_bytes = await _fetch_photo_for_slide("cover", topic)
         if photo_bytes:
             bg = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
@@ -748,16 +741,13 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         else:
             bg = Image.new("RGBA", (W, H), (*primary, 255))
 
-        # Dark gradient overlay: light at top, heavy at bottom
-        bg = _apply_gradient_overlay(bg, opacity_top=0.25, opacity_bottom=0.92)
+        # Dark gradient: transparent top fading to near-black bottom where text sits
+        bg = _apply_gradient_overlay(bg, opacity_top=0.20, opacity_bottom=0.85)
 
         # Watermark logo centre
-        if logo:
-            bg = _add_watermark_logo(bg, logo, opacity=0.15)
-
         draw = ImageDraw.Draw(bg)
 
-        # Small logo top centre
+        # Logo top centre only (no watermark)
         if logo:
             logo_small = logo.copy()
             lw = 120
@@ -776,22 +766,28 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         font_h = FONT_HEADLINE(68)
         font_sub = FONT_BODY(26)
 
-        # Draw headline from bottom
+        # Draw headline from bottom — calculate all heights first to avoid overlap
         padding_x = 70
         max_w = W - padding_x * 2
-        # Calculate headline height first
-        h_height = _draw_text_wrapped(ImageDraw.Draw(Image.new("RGBA", (1, 1))), headline, font_h, max_w, 0, 0, white)
-
-        text_y = H - 90 - 52 - 40  # bottom padding - swipe arrow - gap
+        dummy_draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        h_height = _draw_text_wrapped(dummy_draw, headline, font_h, max_w, 0, 0, white)
+        sub_height = 0
         if subtext:
-            sub_height = _draw_text_wrapped(ImageDraw.Draw(Image.new("RGBA", (1, 1))), subtext, font_sub, max_w, 0, 0, white_75)
+            sub_height = _draw_text_wrapped(dummy_draw, subtext, font_sub, max_w, 0, 0, white_75)
+
+        # Stack from bottom: arrow(52) + gap(40) + subtext + gap(30) + headline
+        arrow_bottom = H - 90
+        text_y = arrow_bottom - 52 - 40
+        if subtext:
             text_y -= sub_height
+            sub_y = text_y
+            text_y -= 30  # gap between headline and subtext
         text_y -= h_height
+        headline_y = text_y
 
-        _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_y, white)
-        text_y += h_height
+        _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, headline_y, white)
         if subtext:
-            _draw_text_wrapped(draw, subtext, font_sub, max_w, padding_x, text_y, (*white[:3], 191))
+            _draw_text_wrapped(draw, subtext, font_sub, max_w, padding_x, sub_y, (*white[:3], 191))
 
         # Swipe arrow
         arrow_y = H - 90 - 52
@@ -820,12 +816,10 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         else:
             bg = Image.new("RGBA", (W, H), (*primary, 255))
 
-        bg = _apply_gradient_overlay(bg, opacity_top=0.85, opacity_bottom=0.85)
+        # Heavy uniform overlay so stats pop cleanly against dark bg
+        bg = _apply_gradient_overlay(bg, opacity_top=0.75, opacity_bottom=0.75)
 
-        if logo:
-            bg = _add_watermark_logo(bg, logo, opacity=0.12)
-
-        # Small logo top centre
+        # Logo top centre only (no watermark)
         draw = ImageDraw.Draw(bg)
         if logo:
             logo_small = logo.copy()
@@ -839,40 +833,52 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
                 logo_small = Image.merge("RGBA", (r, g, b, a))
             bg.paste(logo_small, ((W - lw) // 2, 50), logo_small)
 
-        font_val = FONT_HEADLINE(90)
-        font_lbl = FONT_BODY(24)
-        stat_gap = 60
+        font_val = FONT_HEADLINE(64)
+        font_lbl = FONT_BODY(18)
         divider_color = _hex_to_rgba(cfg["color_accent"], 64)
+        max_val_w = W - 200
+        val_label_gap = 20      # gap between value and its label
+        label_divider_gap = 45  # gap between label and divider
+        divider_stat_gap = 45   # gap between divider and next stat
 
-        # Calculate total height for centering
-        stat_heights = []
-        for s in stats:
-            val, lbl = split_stat(s)
-            val_h = font_val.getbbox(val)[3] - font_val.getbbox(val)[1]
-            lbl_h = font_lbl.getbbox(lbl)[3] - font_lbl.getbbox(lbl)[1] if lbl else 0
-            stat_heights.append(val_h + lbl_h + 10)
-        total_h = sum(stat_heights) + stat_gap * 2 + 2  # 2 dividers
-        start_y = (H - total_h) // 2 + 40  # offset down slightly for logo
-
+        # Pre-calculate all elements for proper centering
+        elements = []  # list of (type, height, data)
         for i, s in enumerate(stats):
             val, lbl = split_stat(s)
-            # Value
-            val_bbox = font_val.getbbox(val)
+            cur_font = font_val
+            val_bbox = cur_font.getbbox(val)
             val_w = val_bbox[2] - val_bbox[0]
-            draw.text(((W - val_w) // 2, start_y), val, font=font_val, fill=accent)
-            start_y += val_bbox[3] - val_bbox[1] + 10
-            # Label
+            if val_w > max_val_w:
+                shrink_size = int(72 * max_val_w / val_w)
+                cur_font = FONT_HEADLINE(shrink_size)
+                val_bbox = cur_font.getbbox(val)
+            val_h = val_bbox[3] - val_bbox[1]
+            elements.append(("val", val_h, {"text": val, "font": cur_font, "fill": accent}))
             if lbl:
                 lbl_upper = lbl.upper()
                 lbl_bbox = font_lbl.getbbox(lbl_upper)
-                lbl_w = lbl_bbox[2] - lbl_bbox[0]
-                draw.text(((W - lbl_w) // 2, start_y), lbl_upper, font=font_lbl, fill=white)
-                start_y += lbl_bbox[3] - lbl_bbox[1]
-            # Divider
+                lbl_h = lbl_bbox[3] - lbl_bbox[1]
+                elements.append(("gap", val_label_gap, None))
+                elements.append(("lbl", lbl_h, {"text": lbl_upper, "font": font_lbl, "fill": white}))
             if i < 2:
-                start_y += stat_gap // 2
+                elements.append(("gap", label_divider_gap, None))
+                elements.append(("div", 1, None))
+                elements.append(("gap", divider_stat_gap, None))
+
+        total_h = sum(e[1] for e in elements)
+        # Centre vertically, offset down a bit for the logo at top
+        start_y = (H - total_h) // 2 + 60
+
+        for etype, eheight, edata in elements:
+            if etype == "val":
+                tw = edata["font"].getbbox(edata["text"])[2] - edata["font"].getbbox(edata["text"])[0]
+                draw.text(((W - tw) // 2, start_y), edata["text"], font=edata["font"], fill=edata["fill"])
+            elif etype == "lbl":
+                tw = edata["font"].getbbox(edata["text"])[2] - edata["font"].getbbox(edata["text"])[0]
+                draw.text(((W - tw) // 2, start_y), edata["text"], font=edata["font"], fill=edata["fill"])
+            elif etype == "div":
                 draw.line([(W // 2 - 50, start_y), (W // 2 + 50, start_y)], fill=divider_color, width=1)
-                start_y += stat_gap // 2
+            start_y += eheight
 
         buf = io.BytesIO()
         bg.save(buf, format="PNG", quality=95)
@@ -884,13 +890,8 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         cta_line = slide.get("cta_line", cfg["cta"])
         website = cfg["website"]
 
-        photo_bytes = await _fetch_photo_for_slide("cta", topic)
-        if photo_bytes:
-            bg = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
-            bg = bg.resize((W, H), Image.LANCZOS)
-            bg = _apply_gradient_overlay(bg, opacity_top=0.92, opacity_bottom=0.95)
-        else:
-            bg = Image.new("RGBA", (W, H), (*primary, 255))
+        # CTA slide: always solid dark background — no photo, no background text interference
+        bg = Image.new("RGBA", (W, H), (*primary, 255))
 
         draw = ImageDraw.Draw(bg)
 
@@ -1073,7 +1074,7 @@ async def linkedin_auth_start():
     """Start LinkedIn OAuth flow. Visit this URL in browser to authenticate."""
     state = str(uuid.uuid4())
     li_oauth_states[state] = "mark"
-    scope = "w_member_social,r_organization_social,w_organization_social"
+    scope = "w_member_social"
     auth_url = (
         f"https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code"
@@ -1912,11 +1913,7 @@ async def _run_pdf_post(brand: str, content_type: str, pdf_name: str):
 
 async def telegram_listener():
     offset = None
-    await send_telegram(
-        "🎨 *Mark v3 is online*\n\n"
-        "I am controlled by Alex. GG approves content via the buttons below each preview.\n\n"
-        f"LinkedIn: {'✅ Connected' if LI_ACCESS_TOKEN else f'⚠️ Not connected — visit {RAILWAY_URL}/linkedin/auth'}"
-    )
+    await send_telegram("🎨 *Mark v3 is online*")
 
     while True:
         try:
@@ -1936,10 +1933,3 @@ async def telegram_listener():
 async def startup():
     asyncio.create_task(telegram_listener())
     log.info("Mark v3 — AI Marketing Bot — online")
-    # Alert if LinkedIn needs auth
-    if not LI_ACCESS_TOKEN:
-        asyncio.create_task(send_telegram(
-            f"⚠️ *Mark needs LinkedIn auth*\n"
-            f"Visit this URL in your browser to connect:\n"
-            f"`{RAILWAY_URL}/linkedin/auth`"
-        ))
