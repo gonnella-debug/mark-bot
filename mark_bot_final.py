@@ -1503,6 +1503,14 @@ async def post_content(content: dict, brand: str) -> dict:
         else:
             log.warning(f"Failed to save {brand} content to Drive")
 
+    # If IG posting failed, send images + caption to Telegram for manual posting
+    ig_result = results.get("instagram", {})
+    if isinstance(ig_result, dict) and "error" in str(ig_result):
+        try:
+            await send_telegram(f"⚠️ *{BRANDS[brand]['name']} — IG auto-post failed*\nReason: {ig_result.get('error', 'unknown')}\n\nImages and caption above — post manually.")
+        except Exception:
+            pass
+
     log.info(f"Post results for {brand}: {results}")
     return results
 
