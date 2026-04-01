@@ -2197,7 +2197,7 @@ _last_render: dict = {}  # {brand, content_type, topic}
 
 async def telegram_listener():
     offset = None
-    await send_telegram("🎨 *Mark v3 is online*")
+    log.info("Mark v3 online — skipping Telegram startup message")
 
     while True:
         try:
