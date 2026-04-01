@@ -814,8 +814,11 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         else:
             bg = Image.new("RGBA", (W, H), (*primary, 255))
 
-        # Minimal gradient: photo dominates, only darken bottom 35% where text sits
-        bg = _apply_gradient_overlay(bg, opacity_top=0.0, opacity_bottom=0.60)
+        # Gradient: darken top for logo visibility + bottom for text
+        if brand == "listr":
+            bg = _apply_gradient_overlay(bg, opacity_top=0.45, opacity_bottom=0.60)
+        else:
+            bg = _apply_gradient_overlay(bg, opacity_top=0.0, opacity_bottom=0.60)
 
         # Watermark logo centre
         draw = ImageDraw.Draw(bg)
@@ -823,7 +826,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         # Logo top centre only (no watermark)
         if logo:
             logo_small = logo.copy()
-            lw = 500 if brand == "listr" else 120
+            lw = 700 if brand == "listr" else 120
             lr = lw / logo_small.width
             lh = int(logo_small.height * lr)
             logo_small = logo_small.resize((lw, lh), Image.LANCZOS)
@@ -895,7 +898,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         draw = ImageDraw.Draw(bg)
         if logo:
             logo_small = logo.copy()
-            lw = 500 if brand == "listr" else 120
+            lw = 700 if brand == "listr" else 120
             lr = lw / logo_small.width
             lh = int(logo_small.height * lr)
             logo_small = logo_small.resize((lw, lh), Image.LANCZOS)
