@@ -1493,21 +1493,34 @@ async def post_content(content: dict, brand: str) -> dict:
         else:
             results["linkedin"] = {"error": "No image to post to LinkedIn"}
 
-    # Save approved content to Google Drive Mark Marketing folder
+    # Send full-quality images as Telegram documents (uncompressed)
     if images:
+        brand_name = BRANDS[brand]["name"]
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M")
+        for i, img_bytes in enumerate(images):
+            try:
+                fname = f"{brand_name}_{ct}_{ts}_slide{i+1}.png"
+                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+                async with httpx.AsyncClient(timeout=30) as client:
+                    await client.post(url, data={"chat_id": TELEGRAM_CHAT_ID}, files={"document": (fname, img_bytes, "image/png")})
+            except Exception as e:
+                log.error(f"Document send error: {e}")
+        # Send caption as text file
         cap_text = f"Instagram:\n{ig_caption}\n\nLinkedIn:\n{cap_li}" if cap_li else ig_caption
-        drive_ok = await save_to_drive(brand, images, cap_text, ct)
-        results["drive_saved"] = drive_ok
-        if drive_ok:
-            log.info(f"Saved {brand} content to Mark Marketing Drive folder")
-        else:
-            log.warning(f"Failed to save {brand} content to Drive")
+        try:
+            cap_fname = f"{brand_name}_{ct}_{ts}_caption.txt"
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+            async with httpx.AsyncClient(timeout=30) as client:
+                await client.post(url, data={"chat_id": TELEGRAM_CHAT_ID}, files={"document": (cap_fname, cap_text.encode(), "text/plain")})
+        except Exception:
+            pass
+        results["files_sent"] = True
 
-    # If IG posting failed, send images + caption to Telegram for manual posting
+    # If IG posting failed, alert for manual posting
     ig_result = results.get("instagram", {})
     if isinstance(ig_result, dict) and "error" in str(ig_result):
         try:
-            await send_telegram(f"⚠️ *{BRANDS[brand]['name']} — IG auto-post failed*\nReason: {ig_result.get('error', 'unknown')}\n\nImages and caption above — post manually.")
+            await send_telegram(f"⚠️ *{BRANDS[brand]['name']} — IG auto-post failed*\nFiles sent above — post manually.")
         except Exception:
             pass
 
@@ -1647,43 +1660,36 @@ async def fetch_pdf_b64(file_id: str) -> str | None:
 
 _drive_token_cache: dict = {"token": None, "expires": 0}
 
+GDRIVE_CLIENT_ID = os.getenv("GDRIVE_CLIENT_ID", "")
+GDRIVE_CLIENT_SECRET = os.getenv("GDRIVE_CLIENT_SECRET", "")
+GDRIVE_REFRESH_TOKEN = os.getenv("GDRIVE_REFRESH_TOKEN", "")
+
+
 async def _get_drive_upload_token() -> str | None:
-    """Get an OAuth2 token from the service account for Drive uploads."""
-    if not GOOGLE_SERVICE_ACCOUNT_JSON:
-        log.warning("GOOGLE_SERVICE_ACCOUNT_JSON not set — cannot upload to Drive")
+    """Get an OAuth2 access token using the refresh token from Sarah's Gmail account."""
+    if not GDRIVE_REFRESH_TOKEN:
+        log.warning("GDRIVE_REFRESH_TOKEN not set — cannot upload to Drive")
         return None
     now = int(time.time())
     if _drive_token_cache["token"] and _drive_token_cache["expires"] > now + 60:
         return _drive_token_cache["token"]
     try:
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
-        sa = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
-        header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "typ": "JWT"}).encode()).rstrip(b"=")
-        claims = {
-            "iss": sa["client_email"],
-            "scope": "https://www.googleapis.com/auth/drive",
-            "aud": sa["token_uri"],
-            "iat": now,
-            "exp": now + 3600,
-        }
-        payload_b = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=")
-        signing_input = header + b"." + payload_b
-        key = serialization.load_pem_private_key(sa["private_key"].encode(), password=None)
-        sig = key.sign(signing_input, asym_padding.PKCS1v15(), hashes.SHA256())
-        signature = base64.urlsafe_b64encode(sig).rstrip(b"=")
-        jwt_token = (signing_input + b"." + signature).decode()
         async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.post(sa["token_uri"], data={
-                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-                "assertion": jwt_token,
+            r = await client.post("https://oauth2.googleapis.com/token", data={
+                "client_id": GDRIVE_CLIENT_ID,
+                "client_secret": GDRIVE_CLIENT_SECRET,
+                "refresh_token": GDRIVE_REFRESH_TOKEN,
+                "grant_type": "refresh_token",
             })
             tok = r.json()
+            if "access_token" not in tok:
+                log.error(f"Drive token refresh failed: {tok}")
+                return None
             _drive_token_cache["token"] = tok["access_token"]
             _drive_token_cache["expires"] = now + tok.get("expires_in", 3600)
             return _drive_token_cache["token"]
     except Exception as e:
-        log.error(f"Drive service account auth error: {e}")
+        log.error(f"Drive OAuth refresh error: {e}")
         return None
 
 
