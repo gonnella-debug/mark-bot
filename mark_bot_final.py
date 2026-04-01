@@ -514,6 +514,7 @@ UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY", "")
 def _find_font(name: str, fallbacks: list[str] = None) -> str:
     """Find a font file on the system."""
     search_dirs = [
+        os.path.join(os.path.dirname(__file__), "fonts"),
         "/Users/gg/Library/Fonts",
         "/Library/Fonts",
         "/System/Library/Fonts",
