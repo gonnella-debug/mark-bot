@@ -336,9 +336,13 @@ async def generate_single(brand: str, content_type: str, topic: str = "", pdf_b6
         """Call Claude with optional reference images and/or a PDF."""
         content_parts = []
         for img_b64 in ref_images:
+            # Detect image type from header bytes
+            import base64 as _b64
+            raw = _b64.b64decode(img_b64[:32])
+            mime = "image/png" if raw[:4] == b'\x89PNG' else "image/jpeg"
             content_parts.append({
                 "type": "image",
-                "source": {"type": "base64", "media_type": "image/jpeg", "data": img_b64}
+                "source": {"type": "base64", "media_type": mime, "data": img_b64}
             })
         if extra_b64:
             content_parts.append({
