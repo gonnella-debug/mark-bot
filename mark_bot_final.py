@@ -1493,6 +1493,16 @@ async def post_content(content: dict, brand: str) -> dict:
         else:
             results["linkedin"] = {"error": "No image to post to LinkedIn"}
 
+    # Save to Google Drive
+    if images:
+        cap_text = f"Instagram:\n{ig_caption}\n\nLinkedIn:\n{cap_li}" if cap_li else ig_caption
+        drive_ok = await save_to_drive(brand, images, cap_text, ct)
+        results["drive_saved"] = drive_ok
+        if drive_ok:
+            log.info(f"Saved {brand} content to Mark Marketing Drive folder")
+        else:
+            log.warning(f"Failed to save {brand} content to Drive")
+
     # Send full-quality images as Telegram documents (uncompressed)
     if images:
         brand_name = BRANDS[brand]["name"]
