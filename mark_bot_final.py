@@ -238,8 +238,11 @@ LISTR VISUAL BRAND:
 
 PROVEN CAROUSEL FORMULA — 3 slides, never deviate:
 Slide 1 COVER: Bold hook headline over dark atmospheric Dubai photo. One punchy statement or question. Arrow → bottom centre.
-Slide 2 DATA: 3 key stats. Large rose gold/gold numbers, white labels. Dark photo bg with logo watermark top-centre.
+Slide 2 DATA: 3 key stats. Large rose gold/gold numbers, white labels. Dark photo bg with logo watermark top-centre. IMPORTANT: Every carousel must have DIFFERENT stats and a DIFFERENT layout angle — never repeat the same 3-stat pattern. Vary between: percentage stats, currency amounts, ranking comparisons, year-over-year changes, project-specific data, area-specific numbers. Each post must feel unique.
 Slide 3 CTA: Pure #1C1C1C (or #000 for ListR) background. Short bold question. CTA line. Logo bottom-centre.
+
+CRITICAL — VARIETY BETWEEN POSTS:
+Each carousel must be visually and contextually distinct from the last. Never reuse the same headline structure, stat format, or photo direction across consecutive posts. Vary the hook style (question vs statement vs stat), the data angle (market-wide vs area-specific vs project-specific), and the photo mood (skyline vs interior vs aerial vs street-level).
 
 STATIC: Single powerful stat or statement. Dark atmospheric bg or solid dark. Logo watermark. Short punchy caption.
 
@@ -479,8 +482,8 @@ LOGO_URLS = {
 
 # Unsplash search terms per slide type
 UNSPLASH_SEARCH_TERMS = {
-    "cover": ["Dubai skyline night lights", "Dubai marina night lights", "Dubai downtown night aerial", "Dubai night city lights"],
-    "data": ["Dubai night skyline lights", "Dubai dark cityscape night", "Dubai buildings night lights aerial"],
+    "cover": ["Dubai skyline night lights", "Dubai marina night lights", "Dubai downtown night aerial", "Dubai night city lights", "luxury penthouse Dubai interior", "Dubai aerial palm jumeirah night"],
+    "data": ["dark modern architecture abstract", "luxury apartment interior moody", "Dubai creek harbour night", "dark office glass building", "abstract geometric dark building"],
     "cta": [],
 }
 
@@ -820,7 +823,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         # Logo top centre only (no watermark)
         if logo:
             logo_small = logo.copy()
-            lw = 120
+            lw = 320 if brand == "listr" else 120
             lr = lw / logo_small.width
             lh = int(logo_small.height * lr)
             logo_small = logo_small.resize((lw, lh), Image.LANCZOS)
@@ -893,7 +896,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         draw = ImageDraw.Draw(bg)
         if logo:
             logo_small = logo.copy()
-            lw = 120
+            lw = 320 if brand == "listr" else 120
             lr = lw / logo_small.width
             lh = int(logo_small.height * lr)
             logo_small = logo_small.resize((lw, lh), Image.LANCZOS)
@@ -991,7 +994,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         # Logo
         if logo:
             logo_big = logo.copy()
-            lw = 180
+            lw = 420 if brand == "listr" else 180
             lr = lw / logo_big.width
             lh = int(logo_big.height * lr)
             logo_big = logo_big.resize((lw, lh), Image.LANCZOS)
