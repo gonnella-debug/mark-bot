@@ -873,7 +873,8 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         return buf.getvalue()
 
     elif slide_index == 1:
-        # ── DATA SLIDE: dark photo bg + 3 stats ──
+        # ── DATA SLIDE: dark photo bg + 3 stats — MULTIPLE LAYOUTS ──
+        import random
         stats = slide.get("stats", ["—", "—", "—"])
         while len(stats) < 3:
             stats.append("—")
@@ -889,10 +890,8 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         else:
             bg = Image.new("RGBA", (W, H), (*primary, 255))
 
-        # Heavy uniform overlay so stats pop cleanly against dark bg
         bg = _apply_gradient_overlay(bg, opacity_top=0.55, opacity_bottom=0.55)
 
-        # Logo top centre only (no watermark)
         draw = ImageDraw.Draw(bg)
         if logo:
             logo_small = logo.copy()
@@ -906,52 +905,150 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
                 logo_small = Image.merge("RGBA", (r, g, b, a))
             bg.paste(logo_small, ((W - lw) // 2, 50), logo_small)
 
-        font_val = FONT_HEADLINE(64)
-        font_lbl = FONT_BODY(18)
-        divider_color = _hex_to_rgba(cfg["color_accent"], 64)
-        max_val_w = W - 200
-        val_label_gap = 20      # gap between value and its label
-        label_divider_gap = 45  # gap between label and divider
-        divider_stat_gap = 45   # gap between divider and next stat
+        layout = random.choice(["stacked", "hero", "cards"])
 
-        # Pre-calculate all elements for proper centering
-        elements = []  # list of (type, height, data)
-        for i, s in enumerate(stats):
-            val, lbl = split_stat(s)
-            cur_font = font_val
-            val_bbox = cur_font.getbbox(val)
-            val_w = val_bbox[2] - val_bbox[0]
-            if val_w > max_val_w:
-                shrink_size = int(72 * max_val_w / val_w)
-                cur_font = FONT_HEADLINE(shrink_size)
+        if layout == "stacked":
+            # LAYOUT A: Classic vertical stack with accent dividers
+            font_val = FONT_HEADLINE(64)
+            font_lbl = FONT_BODY(18)
+            divider_color = _hex_to_rgba(cfg["color_accent"], 64)
+            max_val_w = W - 200
+
+            elements = []
+            for i, s in enumerate(stats):
+                val, lbl = split_stat(s)
+                cur_font = font_val
                 val_bbox = cur_font.getbbox(val)
-            val_h = val_bbox[3] - val_bbox[1]
-            elements.append(("val", val_h, {"text": val, "font": cur_font, "fill": accent}))
-            if lbl:
-                lbl_upper = lbl.upper()
-                lbl_bbox = font_lbl.getbbox(lbl_upper)
-                lbl_h = lbl_bbox[3] - lbl_bbox[1]
-                elements.append(("gap", val_label_gap, None))
-                elements.append(("lbl", lbl_h, {"text": lbl_upper, "font": font_lbl, "fill": white}))
-            if i < 2:
-                elements.append(("gap", label_divider_gap, None))
-                elements.append(("div", 1, None))
-                elements.append(("gap", divider_stat_gap, None))
+                val_w = val_bbox[2] - val_bbox[0]
+                if val_w > max_val_w:
+                    shrink_size = int(64 * max_val_w / val_w)
+                    cur_font = FONT_HEADLINE(shrink_size)
+                    val_bbox = cur_font.getbbox(val)
+                val_h = val_bbox[3] - val_bbox[1]
+                elements.append(("val", val_h, {"text": val, "font": cur_font, "fill": accent}))
+                if lbl:
+                    lbl_upper = lbl.upper()
+                    lbl_bbox = font_lbl.getbbox(lbl_upper)
+                    lbl_h = lbl_bbox[3] - lbl_bbox[1]
+                    elements.append(("gap", 20, None))
+                    elements.append(("lbl", lbl_h, {"text": lbl_upper, "font": font_lbl, "fill": white}))
+                if i < 2:
+                    elements.append(("gap", 45, None))
+                    elements.append(("div", 1, None))
+                    elements.append(("gap", 45, None))
 
-        total_h = sum(e[1] for e in elements)
-        # Centre vertically, offset down a bit for the logo at top
-        start_y = (H - total_h) // 2 + 60
+            total_h = sum(e[1] for e in elements)
+            start_y = (H - total_h) // 2 + 60
 
-        for etype, eheight, edata in elements:
-            if etype == "val":
-                tw = edata["font"].getbbox(edata["text"])[2] - edata["font"].getbbox(edata["text"])[0]
-                draw.text(((W - tw) // 2, start_y), edata["text"], font=edata["font"], fill=edata["fill"])
-            elif etype == "lbl":
-                tw = edata["font"].getbbox(edata["text"])[2] - edata["font"].getbbox(edata["text"])[0]
-                draw.text(((W - tw) // 2, start_y), edata["text"], font=edata["font"], fill=edata["fill"])
-            elif etype == "div":
-                draw.line([(W // 2 - 50, start_y), (W // 2 + 50, start_y)], fill=divider_color, width=1)
-            start_y += eheight
+            for etype, eheight, edata in elements:
+                if etype == "val":
+                    tw = edata["font"].getbbox(edata["text"])[2] - edata["font"].getbbox(edata["text"])[0]
+                    draw.text(((W - tw) // 2, start_y), edata["text"], font=edata["font"], fill=edata["fill"])
+                elif etype == "lbl":
+                    tw = edata["font"].getbbox(edata["text"])[2] - edata["font"].getbbox(edata["text"])[0]
+                    draw.text(((W - tw) // 2, start_y), edata["text"], font=edata["font"], fill=edata["fill"])
+                elif etype == "div":
+                    draw.line([(W // 2 - 50, start_y), (W // 2 + 50, start_y)], fill=_hex_to_rgba(cfg["color_accent"], 64), width=1)
+                start_y += eheight
+
+        elif layout == "hero":
+            # LAYOUT B: One large hero stat top, two smaller stats side by side below
+            val0, lbl0 = split_stat(stats[0])
+            val1, lbl1 = split_stat(stats[1])
+            val2, lbl2 = split_stat(stats[2])
+
+            # Hero stat — big and centered
+            hero_font = FONT_HEADLINE(96)
+            hero_bbox = hero_font.getbbox(val0)
+            hero_w = hero_bbox[2] - hero_bbox[0]
+            max_hero_w = W - 160
+            if hero_w > max_hero_w:
+                hero_font = FONT_HEADLINE(int(96 * max_hero_w / hero_w))
+                hero_bbox = hero_font.getbbox(val0)
+                hero_w = hero_bbox[2] - hero_bbox[0]
+            hero_h = hero_bbox[3] - hero_bbox[1]
+
+            hero_y = 350
+            draw.text(((W - hero_w) // 2, hero_y), val0, font=hero_font, fill=accent)
+            if lbl0:
+                lbl_font = FONT_BODY(22)
+                lbl_upper = lbl0.upper()
+                lbl_bbox = lbl_font.getbbox(lbl_upper)
+                lbl_w = lbl_bbox[2] - lbl_bbox[0]
+                draw.text(((W - lbl_w) // 2, hero_y + hero_h + 20), lbl_upper, font=lbl_font, fill=white)
+
+            # Accent line
+            line_y = hero_y + hero_h + 80
+            draw.line([(W // 2 - 120, line_y), (W // 2 + 120, line_y)], fill=accent_rgba, width=2)
+
+            # Two smaller stats side by side
+            small_font = FONT_HEADLINE(48)
+            small_lbl_font = FONT_BODY(16)
+            col_x = [W // 4, 3 * W // 4]
+            row_y = line_y + 60
+
+            for i, (val, lbl) in enumerate([(val1, lbl1), (val2, lbl2)]):
+                cur_font = small_font
+                vb = cur_font.getbbox(val)
+                vw = vb[2] - vb[0]
+                max_col_w = W // 2 - 80
+                if vw > max_col_w:
+                    cur_font = FONT_HEADLINE(int(48 * max_col_w / vw))
+                    vb = cur_font.getbbox(val)
+                    vw = vb[2] - vb[0]
+                vh = vb[3] - vb[1]
+                draw.text((col_x[i] - vw // 2, row_y), val, font=cur_font, fill=accent)
+                if lbl:
+                    lb = small_lbl_font.getbbox(lbl.upper())
+                    lw2 = lb[2] - lb[0]
+                    draw.text((col_x[i] - lw2 // 2, row_y + vh + 15), lbl.upper(), font=small_lbl_font, fill=white)
+
+        elif layout == "cards":
+            # LAYOUT C: Stats in semi-transparent rounded card rows
+            card_margin = 60
+            card_w = W - card_margin * 2
+            card_h = 160
+            card_gap = 30
+            total_cards_h = 3 * card_h + 2 * card_gap
+            start_y = (H - total_cards_h) // 2 + 60
+
+            val_font = FONT_HEADLINE(52)
+            lbl_font = FONT_BODY(18)
+            card_bg_color = (0, 0, 0, 140)
+
+            for i, s in enumerate(stats):
+                val, lbl = split_stat(s)
+                cy = start_y + i * (card_h + card_gap)
+
+                # Draw semi-transparent card background
+                card_overlay = Image.new("RGBA", (card_w, card_h), card_bg_color)
+                bg.paste(Image.alpha_composite(
+                    bg.crop((card_margin, cy, card_margin + card_w, cy + card_h)),
+                    card_overlay
+                ), (card_margin, cy))
+
+                # Accent left border
+                draw = ImageDraw.Draw(bg)
+                draw.rectangle([(card_margin, cy), (card_margin + 4, cy + card_h)], fill=accent_rgba)
+
+                # Value text — left aligned inside card
+                cur_font = val_font
+                vb = cur_font.getbbox(val)
+                vw = vb[2] - vb[0]
+                max_cw = card_w - 60
+                if vw > max_cw:
+                    cur_font = FONT_HEADLINE(int(52 * max_cw / vw))
+                    vb = cur_font.getbbox(val)
+                vh = vb[3] - vb[1]
+
+                text_x = card_margin + 30
+                if lbl:
+                    # Value top, label below
+                    draw.text((text_x, cy + (card_h - vh - 30) // 2), val, font=cur_font, fill=accent)
+                    lb = lbl_font.getbbox(lbl.upper())
+                    draw.text((text_x, cy + (card_h - vh - 30) // 2 + vh + 10), lbl.upper(), font=lbl_font, fill=white)
+                else:
+                    draw.text((text_x, cy + (card_h - vh) // 2), val, font=cur_font, fill=accent)
 
         buf = io.BytesIO()
         bg.save(buf, format="PNG", quality=95)
@@ -1769,6 +1866,11 @@ async def handle_callback(update: dict):
 
     parts = data.split("|")
     action = parts[0]
+
+    if not brand:
+        await answer_callback(cb_id, "Expired — regenerate this post")
+        await send_telegram("⚠️ This approval expired (Mark restarted). Please regenerate the content.")
+        return
 
     if action == "approve_single":
         await answer_callback(cb_id, "Approved ✅")
