@@ -830,7 +830,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         # Logo top centre only (no watermark)
         if logo:
             logo_small = logo.copy()
-            lw = 700 if brand == "listr" else 120
+            lw = 300 if brand == "listr" else 120
             lr = lw / logo_small.width
             lh = int(logo_small.height * lr)
             logo_small = logo_small.resize((lw, lh), Image.LANCZOS)
@@ -902,7 +902,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         draw = ImageDraw.Draw(bg)
         if logo:
             logo_small = logo.copy()
-            lw = 700 if brand == "listr" else 120
+            lw = 300 if brand == "listr" else 120
             lr = lw / logo_small.width
             lh = int(logo_small.height * lr)
             logo_small = logo_small.resize((lw, lh), Image.LANCZOS)
@@ -1098,7 +1098,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         # Logo
         if logo:
             logo_big = logo.copy()
-            lw = 600 if brand == "listr" else 180
+            lw = 350 if brand == "listr" else 180
             lr = lw / logo_big.width
             lh = int(logo_big.height * lr)
             logo_big = logo_big.resize((lw, lh), Image.LANCZOS)
