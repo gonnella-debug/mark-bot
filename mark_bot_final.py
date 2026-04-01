@@ -1714,7 +1714,7 @@ async def save_to_drive(brand: str, images: list[bytes], caption: str, content_t
             ).encode() + img_bytes + f"\r\n--{boundary}--\r\n".encode()
             try:
                 r = await client.post(
-                    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+                    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
                     headers={**headers, "Content-Type": f"multipart/related; boundary={boundary}"},
                     content=body,
                 )
