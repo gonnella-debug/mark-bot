@@ -555,22 +555,25 @@ BRAND_FALLBACK_PHOTOS = {
     },
     "nucassa_holdings": {
         "cover": [
-            "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=2000&h=2500&fit=crop&q=95",  # business suit dark
-            "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=2000&h=2500&fit=crop&q=95",  # trading screen
-            "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=2000&h=2500&fit=crop&q=95",  # gold bars
-            "https://images.unsplash.com/photo-1559136555-9303baea8ebd?w=2000&h=2500&fit=crop&q=95",  # luxury watch
-            "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=2000&h=2500&fit=crop&q=95",  # conference dark
-            "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=2000&h=2500&fit=crop&q=95",  # executive meeting
-            "https://images.unsplash.com/photo-1551836022-deb4988cc6c0?w=2000&h=2500&fit=crop&q=95",  # luxury car
-            "https://images.unsplash.com/photo-1567521464027-f127ff144326?w=2000&h=2500&fit=crop&q=95",  # yacht exterior
-            "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=2000&h=2500&fit=crop&q=95",  # modern office
-            "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=2000&h=2500&fit=crop&q=95",  # business skyline
+            "https://images.unsplash.com/photo-1743184579851-5ec9972100b3?w=2000&h=2500&fit=crop&q=95",  # golden champagne bottle, dark glow — TOP PICK
+            "https://images.unsplash.com/photo-1748569747438-b6b5f18a46b9?w=2000&h=2500&fit=crop&q=95",  # Mercedes AMG dark interior — TOP PICK
+            "https://images.unsplash.com/photo-1611520175743-30ff00129621?w=2000&h=2500&fit=crop&q=95",  # beef wellington fine dining dark — TOP PICK
+            "https://images.unsplash.com/photo-1760161339261-56487b766a17?w=2000&h=2500&fit=crop&q=95",  # Audi RS quilted leather dark — TOP PICK
+            "https://images.unsplash.com/photo-1762463176417-2c5e63767bd2?w=2000&h=2500&fit=crop&q=95",  # gold bars on dark surface
+            "https://images.unsplash.com/photo-1643656351603-39d13c8826d0?w=2000&h=2500&fit=crop&q=95",  # gold bars stacked dark
+            "https://images.unsplash.com/photo-1708651145401-6be804cd02d4?w=2000&h=2500&fit=crop&q=95",  # luxury watch dark background
+            "https://images.unsplash.com/photo-1623428454697-08da4a100602?w=2000&h=2500&fit=crop&q=95",  # champagne pouring rose gold
+            "https://images.unsplash.com/photo-1749841730816-fabf3a4c2e06?w=2000&h=2500&fit=crop&q=95",  # cigar + whiskey glass warm
+            "https://images.unsplash.com/photo-1501786387846-a18210d6e024?w=2000&h=2500&fit=crop&q=95",  # cigar on whiskey glass classic
+            "https://images.unsplash.com/photo-1643656350783-e8e90d1e529e?w=2000&h=2500&fit=crop&q=95",  # gold bars with certificate dark
+            "https://images.unsplash.com/photo-1587900437942-8758241767ef?w=2000&h=2500&fit=crop&q=95",  # fine dining dark plate
         ],
         "data": [
-            "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=2000&h=2500&fit=crop&q=95",  # trading charts
-            "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=2000&h=2500&fit=crop&q=95",  # gold
-            "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=2000&h=2500&fit=crop&q=95",  # dark building
-            "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=2000&h=2500&fit=crop&q=95",  # dark skyscraper
+            "https://images.unsplash.com/photo-1634542984003-e0fb8e200e91?w=2000&h=2500&fit=crop&q=95",  # candlestick chart dark screen
+            "https://images.unsplash.com/photo-1560221328-12fe60f83ab8?w=2000&h=2500&fit=crop&q=95",  # stock chart lines dark
+            "https://images.unsplash.com/photo-1546872003-917e15185482?w=2000&h=2500&fit=crop&q=95",  # black leather texture
+            "https://images.unsplash.com/photo-1639754390580-2e7437267698?w=2000&h=2500&fit=crop&q=95",  # trading candlestick dark
+            "https://images.unsplash.com/photo-1744782211816-c5224434614f?w=2000&h=2500&fit=crop&q=95",  # multi-monitor trading desk
         ],
     },
     "listr": {
