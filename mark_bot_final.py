@@ -47,13 +47,13 @@ TELEGRAM_BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID    = os.getenv("TELEGRAM_CHAT_ID")
 
 # Meta
-META_APP_ID         = os.getenv("META_APP_ID", "212164228622395")
-META_APP_SECRET     = os.getenv("META_APP_SECRET", "c9592e63b3355f9e7e512223464681c0")
+META_APP_ID         = os.getenv("META_APP_ID", "")
+META_APP_SECRET     = os.getenv("META_APP_SECRET", "")
 META_SYSTEM_TOKEN   = os.getenv("META_SYSTEM_TOKEN")
 
 # LinkedIn
-LI_CLIENT_ID        = os.getenv("LI_CLIENT_ID", "771btfsjdaf16f")
-LI_CLIENT_SECRET    = os.getenv("LI_CLIENT_SECRET", "WPL_AP1.RbvoWqxW1b8AJXwr.8tkOrQ==")
+LI_CLIENT_ID        = os.getenv("LI_CLIENT_ID", "")
+LI_CLIENT_SECRET    = os.getenv("LI_CLIENT_SECRET", "")
 LI_NUCASSA_RE_PAGE  = os.getenv("LI_NUCASSA_RE_PAGE", "90919312")
 LI_HOLDINGS_PAGE    = os.getenv("LI_HOLDINGS_PAGE", "109941216")
 LI_ACCESS_TOKEN     = os.getenv("LI_ACCESS_TOKEN", "")       # set after first OAuth
@@ -62,8 +62,8 @@ _li_person_id       = ""  # fetched during OAuth
 LI_TOKEN_EXPIRY     = int(os.getenv("LI_TOKEN_EXPIRY", "0"))
 
 # Canva
-CANVA_EMAIL         = os.getenv("CANVA_EMAIL", "gonnella@nu-propertygroup.com")
-CANVA_PASSWORD      = os.getenv("CANVA_PASSWORD", "EmaarEmaar21?!?")
+CANVA_EMAIL         = os.getenv("CANVA_EMAIL", "")
+CANVA_PASSWORD      = os.getenv("CANVA_PASSWORD", "")
 
 # Google Drive
 GDRIVE_API_KEY        = os.getenv("GDRIVE_API_KEY")
@@ -2242,9 +2242,59 @@ async def telegram_listener():
             await asyncio.sleep(5)
 
 
+# ── LINKEDIN TOKEN REFRESH ────────────────────────────────────────────────────
+
+async def refresh_linkedin_token():
+    global LI_ACCESS_TOKEN, LI_REFRESH_TOKEN, LI_TOKEN_EXPIRY
+    if not LI_REFRESH_TOKEN:
+        return
+    remaining = LI_TOKEN_EXPIRY - time.time()
+    if remaining > 432000:          # more than 5 days left
+        return
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://www.linkedin.com/oauth/v2/accessToken",
+                data={
+                    "grant_type":    "refresh_token",
+                    "refresh_token": LI_REFRESH_TOKEN,
+                    "client_id":     LI_CLIENT_ID,
+                    "client_secret": LI_CLIENT_SECRET,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        LI_ACCESS_TOKEN  = data["access_token"]
+        LI_REFRESH_TOKEN = data.get("refresh_token", LI_REFRESH_TOKEN)
+        LI_TOKEN_EXPIRY  = int(time.time()) + data.get("expires_in", 5184000)
+        days_valid = data.get("expires_in", 5184000) // 86400
+        await send_telegram(f"LinkedIn token refreshed — valid for {days_valid} days")
+        log.info(f"LinkedIn token refreshed, expires in {days_valid} days")
+    except Exception as e:
+        log.error(f"LinkedIn token refresh failed: {e}")
+        await send_telegram(
+            f"LinkedIn token refresh FAILED — manual re-auth needed at {RAILWAY_URL}/linkedin/auth"
+        )
+
+
+async def linkedin_token_monitor():
+    while True:
+        try:
+            await refresh_linkedin_token()
+        except Exception as e:
+            log.error(f"LinkedIn token monitor error: {e}")
+        await asyncio.sleep(86400)
+
+
 # ── STARTUP ───────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def startup():
+    _required = ["CLAUDE_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "META_SYSTEM_TOKEN"]
+    _missing = [v for v in _required if not os.getenv(v)]
+    if _missing:
+        log.error(f"MISSING REQUIRED ENV VARS: {', '.join(_missing)} — Mark cannot start properly")
+
     asyncio.create_task(telegram_listener())
+    asyncio.create_task(linkedin_token_monitor())
     log.info("Mark v3 — AI Marketing Bot — online")
