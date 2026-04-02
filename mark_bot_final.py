@@ -501,14 +501,17 @@ BRAND_SEARCH_TERMS = {
     },
     "nucassa_holdings": {
         "cover": [
-            "luxury private jet interior", "executive boardroom modern", "gold bars vault wealth",
-            "luxury watch close up dark", "private banking office interior", "yacht interior luxury",
-            "champagne glasses celebration dark", "luxury car interior night", "fine dining dark ambient",
-            "private office skyline view night", "luxury lounge dark ambient", "cigar whiskey dark luxury",
+            "Dubai financial district DIFC tower night", "Abu Dhabi ADGM skyline night",
+            "corporate boardroom skyline view dark", "luxury office interior dark modern",
+            "bank vault door steel dark", "signing contract document pen dark",
+            "Dubai skyline aerial night financial", "glass office tower dark reflection",
+            "corporate meeting room dark modern", "Dubai business bay financial tower night",
+            "safe deposit vault dark steel", "office desk skyline window dark",
         ],
         "data": [
-            "stock market chart dark", "financial data screen dark", "dark abstract gold texture",
-            "luxury dark marble texture", "abstract black gold geometric", "dark corporate office empty",
+            "financial chart dark screen", "portfolio analytics dark screen",
+            "abstract dark gold geometric pattern", "dark marble texture luxury",
+            "corporate office dark empty modern", "abstract dark lines architecture",
         ],
     },
     "listr": {
@@ -554,27 +557,8 @@ BRAND_FALLBACK_PHOTOS = {
         ],
     },
     "nucassa_holdings": {
-        "cover": [
-            "https://images.unsplash.com/photo-1743184579851-5ec9972100b3?w=2000&h=2500&fit=crop&q=95",  # golden champagne bottle, dark glow — TOP PICK
-            "https://images.unsplash.com/photo-1748569747438-b6b5f18a46b9?w=2000&h=2500&fit=crop&q=95",  # Mercedes AMG dark interior — TOP PICK
-            "https://images.unsplash.com/photo-1611520175743-30ff00129621?w=2000&h=2500&fit=crop&q=95",  # beef wellington fine dining dark — TOP PICK
-            "https://images.unsplash.com/photo-1760161339261-56487b766a17?w=2000&h=2500&fit=crop&q=95",  # Audi RS quilted leather dark — TOP PICK
-            "https://images.unsplash.com/photo-1762463176417-2c5e63767bd2?w=2000&h=2500&fit=crop&q=95",  # gold bars on dark surface
-            "https://images.unsplash.com/photo-1643656351603-39d13c8826d0?w=2000&h=2500&fit=crop&q=95",  # gold bars stacked dark
-            "https://images.unsplash.com/photo-1708651145401-6be804cd02d4?w=2000&h=2500&fit=crop&q=95",  # luxury watch dark background
-            "https://images.unsplash.com/photo-1623428454697-08da4a100602?w=2000&h=2500&fit=crop&q=95",  # champagne pouring rose gold
-            "https://images.unsplash.com/photo-1749841730816-fabf3a4c2e06?w=2000&h=2500&fit=crop&q=95",  # cigar + whiskey glass warm
-            "https://images.unsplash.com/photo-1501786387846-a18210d6e024?w=2000&h=2500&fit=crop&q=95",  # cigar on whiskey glass classic
-            "https://images.unsplash.com/photo-1643656350783-e8e90d1e529e?w=2000&h=2500&fit=crop&q=95",  # gold bars with certificate dark
-            "https://images.unsplash.com/photo-1587900437942-8758241767ef?w=2000&h=2500&fit=crop&q=95",  # fine dining dark plate
-        ],
-        "data": [
-            "https://images.unsplash.com/photo-1634542984003-e0fb8e200e91?w=2000&h=2500&fit=crop&q=95",  # candlestick chart dark screen
-            "https://images.unsplash.com/photo-1560221328-12fe60f83ab8?w=2000&h=2500&fit=crop&q=95",  # stock chart lines dark
-            "https://images.unsplash.com/photo-1546872003-917e15185482?w=2000&h=2500&fit=crop&q=95",  # black leather texture
-            "https://images.unsplash.com/photo-1639754390580-2e7437267698?w=2000&h=2500&fit=crop&q=95",  # trading candlestick dark
-            "https://images.unsplash.com/photo-1744782211816-c5224434614f?w=2000&h=2500&fit=crop&q=95",  # multi-monitor trading desk
-        ],
+        "cover": [],  # Holdings uses ONLY Pexels/Unsplash API search with strict terms — no random curated fallbacks
+        "data": [],
     },
     "listr": {
         "cover": [
@@ -663,6 +647,11 @@ _PHOTO_BLOCKLIST = [
     "bus", "tour", "tourist", "cartoon", "illustration", "drawing", "clip art",
     "meme", "selfie", "crowd", "protest", "accident", "trash", "garbage",
     "food truck", "street vendor", "tuk tuk", "rickshaw", "camping",
+    "beef", "food", "plate", "restaurant", "wine", "cocktail", "dessert",
+    "car interior", "steering wheel", "dashboard", "mercedes", "bmw", "audi",
+    "watch", "rolex", "jewelry", "ring", "necklace", "bracelet",
+    "cigar", "whiskey", "champagne", "bottle", "drink", "glass",
+    "jet", "airplane", "aircraft", "yacht", "boat", "ship",
 ]
 
 
@@ -765,24 +754,25 @@ async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = 
 
         # Cover slides — brand-specific topic matching
         if brand == "nucassa_holdings":
-            # Holdings = wealth, investment, institutional — NOT property photos
+            # Holdings = ADGM SPV, DBS custody, institutional investment — corporate/financial imagery ONLY
             if any(w in topic_words for w in ["spv", "adgm", "structure", "legal", "regulat"]):
-                search = random.choice(["executive boardroom dark modern", "corporate office skyline night", "legal document signing dark"])
+                search = random.choice(["Abu Dhabi financial district tower night", "DIFC Dubai office tower night", "corporate legal document signing dark"])
             elif any(w in topic_words for w in ["custody", "bank", "dbs", "capital", "protect"]):
-                search = random.choice(["gold bars vault dark", "private banking office luxury", "safe deposit vault dark"])
+                search = random.choice(["bank vault door steel dark", "safe deposit box vault dark", "corporate banking office dark modern"])
             elif any(w in topic_words for w in ["yield", "return", "income", "dividend", "perform"]):
-                search = random.choice(["stock market chart dark screen", "financial data analytics dark", "trading floor screens dark"])
-            elif any(w in topic_words for w in ["family office", "hnw", "wealth", "net worth"]):
-                search = random.choice(["luxury private jet interior", "yacht interior luxury dark", "fine dining dark ambient luxury"])
+                search = random.choice(["financial chart analytics dark screen", "portfolio performance chart dark", "stock market data dark screen"])
+            elif any(w in topic_words for w in ["family office", "hnw", "wealth", "net worth", "investor"]):
+                search = random.choice(["luxury corporate boardroom skyline dark", "Dubai financial centre tower night", "private office skyline window dark"])
             elif any(w in topic_words for w in ["exit", "liquidat", "realis", "cycle"]):
-                search = random.choice(["luxury watch close up dark background", "chess pieces dark strategy", "hourglass dark moody"])
+                search = random.choice(["corporate strategy meeting dark", "financial district aerial night", "Dubai skyline business bay night"])
+            elif any(w in topic_words for w in ["real estate", "asset", "property", "allocation"]):
+                search = random.choice(["Dubai skyline aerial night financial district", "glass tower office dark reflection", "Dubai business bay towers night"])
             else:
                 search = random.choice([
-                    "luxury private jet interior", "executive boardroom modern dark",
-                    "gold bars wealth dark", "luxury watch dark background",
-                    "private office skyline view night", "yacht deck ocean sunset",
-                    "champagne dark luxury ambient", "luxury car interior night",
-                    "fine dining dark moody", "corporate tower lobby dark",
+                    "Dubai financial district DIFC night", "corporate boardroom dark skyline view",
+                    "bank vault steel door dark", "luxury office interior dark modern",
+                    "Dubai business tower night aerial", "corporate signing document pen dark",
+                    "financial centre glass tower night", "Abu Dhabi skyline night towers",
                 ])
         elif brand == "listr":
             # ListR = property marketplace, Dubai real estate, disruptive
