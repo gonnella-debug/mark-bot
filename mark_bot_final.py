@@ -484,73 +484,119 @@ LOGO_URLS = {
     "listr": "https://d2xsxph8kpxj0f.cloudfront.net/310519663442673192/8rDTGLeYbqNNdTnaNjEFq5/ListRLogo_white_97e809bf.png",
 }
 
-# Unsplash search terms per slide type
-UNSPLASH_SEARCH_TERMS = {
-    "cover": [
-        "Dubai skyline night lights", "Dubai marina night lights", "Dubai downtown night aerial",
-        "Dubai night city lights", "luxury penthouse Dubai interior", "Dubai aerial palm jumeirah night",
-        "Dubai sunset golden hour", "Dubai creek harbour", "luxury villa pool Dubai",
-        "modern apartment interior luxury", "Dubai business bay towers", "Dubai waterfront luxury",
-        "Dubai Burj Khalifa night", "luxury real estate interior", "Dubai beach resort aerial",
-        "premium lounge interior dark", "Dubai fountain aerial night", "modern skyline dusk",
-        "luxury balcony city view night", "Dubai palm jumeirah aerial sunset",
-    ],
-    "data": [
-        "dark modern architecture abstract", "luxury apartment interior moody",
-        "Dubai creek harbour night", "dark office glass building", "abstract geometric dark building",
-        "modern skyscraper detail dark", "glass facade reflection night", "dark luxury marble interior",
-        "abstract architecture lines shadow", "concrete texture modern building",
-    ],
-    "cta": [],
+# Brand-specific search terms — each brand has its own visual identity
+BRAND_SEARCH_TERMS = {
+    "nucassa_re": {
+        "cover": [
+            "Dubai skyline sunset golden hour", "Dubai marina night aerial", "Dubai downtown towers night",
+            "luxury villa pool Dubai", "Dubai penthouse interior modern", "Dubai aerial palm jumeirah",
+            "Dubai waterfront sunset", "luxury apartment balcony city view", "Dubai beach resort aerial",
+            "Dubai Burj Khalifa night", "modern Dubai architecture", "Dubai residential tower luxury",
+        ],
+        "data": [
+            "dark modern architecture abstract", "luxury apartment interior moody",
+            "dark office glass building", "abstract geometric dark building",
+            "glass facade reflection night", "dark luxury marble interior",
+        ],
+    },
+    "nucassa_holdings": {
+        "cover": [
+            "luxury private jet interior", "executive boardroom modern", "gold bars vault wealth",
+            "luxury watch close up dark", "private banking office interior", "yacht interior luxury",
+            "champagne glasses celebration dark", "luxury car interior night", "fine dining dark ambient",
+            "private office skyline view night", "luxury lounge dark ambient", "cigar whiskey dark luxury",
+        ],
+        "data": [
+            "stock market chart dark", "financial data screen dark", "dark abstract gold texture",
+            "luxury dark marble texture", "abstract black gold geometric", "dark corporate office empty",
+        ],
+    },
+    "listr": {
+        "cover": [
+            "Dubai skyline sunset golden hour", "Dubai marina aerial", "Dubai downtown night lights",
+            "modern apartment building Dubai", "Dubai residential community aerial", "Dubai villa exterior",
+            "Dubai property aerial view", "Dubai beach apartment view", "luxury Dubai townhouse",
+            "Dubai JBR beach aerial", "Dubai sports city aerial", "modern Dubai neighbourhood",
+        ],
+        "data": [
+            "dark modern architecture abstract", "abstract geometric dark building",
+            "glass facade reflection night", "concrete texture modern building",
+            "dark luxury marble interior", "modern skyscraper detail dark",
+        ],
+    },
 }
 
-# Fallback curated URLs if Unsplash API search fails
-# Curated Dubai golden hour/sunset photos — wide, editorial quality
-UNSPLASH_PHOTOS = {
-    "cover": [
-        # Dubai skylines - varied angles and times
-        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=2000&h=2500&fit=crop&q=95",
-        # Marina and waterfront
-        "https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1546412414-e1885e51148b?w=2000&h=2500&fit=crop&q=95",
-        # Night Dubai
-        "https://images.unsplash.com/photo-1514632595-4944383f2737?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1547094078-51b2285dd404?w=2000&h=2500&fit=crop&q=95",
-        # Luxury interiors
-        "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=2000&h=2500&fit=crop&q=95",
-        # Desert and Palm
-        "https://images.unsplash.com/photo-1512632578888-169bbbc64f33?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1526495124232-a04e1849168c?w=2000&h=2500&fit=crop&q=95",
-        # Modern architecture
-        "https://images.unsplash.com/photo-1545893835-abaa50cbe628?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1487958449943-2429e8be8625?w=2000&h=2500&fit=crop&q=95",
-        # Aerial views
-        "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1582672060674-bc2bd808a8b5?w=2000&h=2500&fit=crop&q=95",
-        # Pool/resort luxury
-        "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=2000&h=2500&fit=crop&q=95",
-    ],
-    "data": [
-        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1478860409698-8707f313ee8b?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1451976426598-a7593bd6d0b2?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1494145904049-0dca59b4bbad?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1462206092226-f46025ffe607?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1519999482648-25049ddd37b1?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1448630360428-65456885c650?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1459767129954-1b1c1f9b9ace?w=2000&h=2500&fit=crop&q=95",
-        "https://images.unsplash.com/photo-1464938050520-ef2571e6e7aa?w=2000&h=2500&fit=crop&q=95",
-    ],
-    "cta": [],
+# Fallback search terms if brand not specified
+UNSPLASH_SEARCH_TERMS = BRAND_SEARCH_TERMS["nucassa_re"]
+
+# Brand-specific curated fallback URLs
+BRAND_FALLBACK_PHOTOS = {
+    "nucassa_re": {
+        "cover": [
+            "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1546412414-e1885e51148b?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1514632595-4944383f2737?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=2000&h=2500&fit=crop&q=95",
+        ],
+        "data": [
+            "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1448630360428-65456885c650?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1459767129954-1b1c1f9b9ace?w=2000&h=2500&fit=crop&q=95",
+        ],
+    },
+    "nucassa_holdings": {
+        "cover": [
+            "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=2000&h=2500&fit=crop&q=95",  # business suit dark
+            "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=2000&h=2500&fit=crop&q=95",  # trading screen
+            "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=2000&h=2500&fit=crop&q=95",  # gold bars
+            "https://images.unsplash.com/photo-1559136555-9303baea8ebd?w=2000&h=2500&fit=crop&q=95",  # luxury watch
+            "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=2000&h=2500&fit=crop&q=95",  # conference dark
+            "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=2000&h=2500&fit=crop&q=95",  # executive meeting
+            "https://images.unsplash.com/photo-1551836022-deb4988cc6c0?w=2000&h=2500&fit=crop&q=95",  # luxury car
+            "https://images.unsplash.com/photo-1567521464027-f127ff144326?w=2000&h=2500&fit=crop&q=95",  # yacht exterior
+            "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=2000&h=2500&fit=crop&q=95",  # modern office
+            "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=2000&h=2500&fit=crop&q=95",  # business skyline
+        ],
+        "data": [
+            "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=2000&h=2500&fit=crop&q=95",  # trading charts
+            "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=2000&h=2500&fit=crop&q=95",  # gold
+            "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=2000&h=2500&fit=crop&q=95",  # dark building
+            "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=2000&h=2500&fit=crop&q=95",  # dark skyscraper
+        ],
+    },
+    "listr": {
+        "cover": [
+            "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1545893835-abaa50cbe628?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1582672060674-bc2bd808a8b5?w=2000&h=2500&fit=crop&q=95",
+        ],
+        "data": [
+            "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1448630360428-65456885c650?w=2000&h=2500&fit=crop&q=95",
+            "https://images.unsplash.com/photo-1459767129954-1b1c1f9b9ace?w=2000&h=2500&fit=crop&q=95",
+        ],
+    },
 }
+
+# Legacy alias
+UNSPLASH_PHOTOS = BRAND_FALLBACK_PHOTOS["nucassa_re"]
 
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY", "")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
@@ -609,23 +655,39 @@ def _hex_to_rgba(hex_color: str, alpha: int = 255) -> tuple:
     return (r, g, b, alpha)
 
 
+# Tags/descriptions that indicate irrelevant photos — filter these out
+_PHOTO_BLOCKLIST = [
+    "bus", "tour", "tourist", "cartoon", "illustration", "drawing", "clip art",
+    "meme", "selfie", "crowd", "protest", "accident", "trash", "garbage",
+    "food truck", "street vendor", "tuk tuk", "rickshaw", "camping",
+]
+
+
+def _is_photo_relevant(photo_data: dict) -> bool:
+    """Check if an Unsplash photo is relevant based on its metadata."""
+    desc = (photo_data.get("description") or "").lower()
+    alt = (photo_data.get("alt_description") or "").lower()
+    tags = " ".join(t.get("title", "") for t in photo_data.get("tags", [])).lower()
+    combined = f"{desc} {alt} {tags}"
+    return not any(blocked in combined for blocked in _PHOTO_BLOCKLIST)
+
+
 async def _fetch_unsplash_photo(search_term: str, topic: str = "") -> bytes | None:
     """Fetch a photo from Unsplash API search, sized for 1080x1350."""
-    # Use time-based seed for variety across renders
-    seed = int(time.time() * 1000) + hash(topic + search_term)
-
     if UNSPLASH_ACCESS_KEY:
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 r = await client.get(
                     "https://api.unsplash.com/search/photos",
-                    params={"query": search_term, "per_page": 10, "orientation": "portrait"},
+                    params={"query": search_term, "per_page": 20, "orientation": "portrait"},
                     headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
                 )
                 if r.status_code == 200:
                     results = r.json().get("results", [])
+                    # Filter out irrelevant photos
+                    results = [r for r in results if _is_photo_relevant(r)]
                     if results:
-                        photo = results[seed % len(results)]
+                        photo = random.choice(results)
                         url = photo["urls"]["regular"] + "&w=1080&h=1350&fit=crop"
                         img_r = await client.get(url, timeout=20)
                         if img_r.status_code == 200:
@@ -644,11 +706,16 @@ async def _fetch_pexels_photo(search_term: str) -> bytes | None:
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.get(
                 "https://api.pexels.com/v1/search",
-                params={"query": search_term, "per_page": 15, "orientation": "portrait"},
+                params={"query": search_term, "per_page": 20, "orientation": "portrait"},
                 headers={"Authorization": PEXELS_API_KEY},
             )
             if r.status_code == 200:
                 photos = r.json().get("photos", [])
+                # Filter out irrelevant Pexels photos
+                photos = [p for p in photos if not any(
+                    blocked in (p.get("alt", "") or "").lower()
+                    for blocked in _PHOTO_BLOCKLIST
+                )]
                 if photos:
                     photo = random.choice(photos)
                     url = photo["src"]["large2x"]
@@ -660,75 +727,102 @@ async def _fetch_pexels_photo(search_term: str) -> bytes | None:
     return None
 
 
-async def _fetch_photo_for_slide(slide_type: str, topic: str = "") -> bytes | None:
-    """Fetch a background photo — Unsplash API search first, Pexels fallback, then curated."""
+async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = "nucassa_re") -> bytes | None:
+    """Fetch a background photo — brand-aware search with Unsplash, Pexels fallback, then curated."""
     seed = int(time.time() * 1000) + hash(topic)
 
-    # Build a search query from the topic — different per slide type
-    if UNSPLASH_ACCESS_KEY and slide_type != "cta":
+    # Get brand-specific search terms and fallbacks
+    brand_terms = BRAND_SEARCH_TERMS.get(brand, BRAND_SEARCH_TERMS["nucassa_re"])
+    brand_photos = BRAND_FALLBACK_PHOTOS.get(brand, BRAND_FALLBACK_PHOTOS["nucassa_re"])
+
+    # Build a search query — brand-specific
+    if (UNSPLASH_ACCESS_KEY or PEXELS_API_KEY) and slide_type != "cta":
         topic_words = topic.lower()
-        # Data slides use darker/abstract photos to contrast with cover
+
+        # Data slides — use brand-specific dark/abstract terms
         if slide_type == "data":
-            if any(w in topic_words for w in ["marina", "yacht"]):
-                search = "Dubai marina aerial dark"
-            elif any(w in topic_words for w in ["palm", "jumeirah"]):
-                search = "Dubai architecture modern dark"
-            else:
-                search = random.choice([
-                    "Dubai skyscraper abstract dark", "dark modern architecture abstract",
-                    "glass facade reflection night", "abstract architecture lines shadow",
-                    "dark luxury marble interior", "modern skyscraper detail dark",
-                ])
+            search = random.choice(brand_terms.get("data", ["dark modern architecture abstract"]))
             photo_bytes = await _fetch_unsplash_photo(search, topic)
             if photo_bytes:
                 return photo_bytes
-            # Try Pexels as secondary source
             photo_bytes = await _fetch_pexels_photo(search)
             if photo_bytes:
                 return photo_bytes
-            photos = UNSPLASH_PHOTOS.get("data", UNSPLASH_PHOTOS["cover"])
-            if not photos:
-                return None
-            url = random.choice(photos)
-            try:
-                async with httpx.AsyncClient(timeout=20) as client:
-                    r = await client.get(url)
-                    if r.status_code == 200:
-                        return r.content
-            except Exception as e:
-                log.error(f"Photo fetch error: {e}")
+            photos = brand_photos.get("data", brand_photos.get("cover", []))
+            if photos:
+                url = random.choice(photos)
+                try:
+                    async with httpx.AsyncClient(timeout=20) as client:
+                        r = await client.get(url)
+                        if r.status_code == 200:
+                            return r.content
+                except Exception as e:
+                    log.error(f"Photo fetch error: {e}")
             return None
 
-        # Cover slides use golden hour/sunset
-        topic_words = topic.lower()
-        if any(w in topic_words for w in ["marina", "yacht", "waterfront", "harbour", "creek"]):
-            search = random.choice(["Dubai marina sunset golden hour", "Dubai marina night aerial", "Dubai creek harbour waterfront"])
-        elif any(w in topic_words for w in ["downtown", "burj", "khalifa", "fountain"]):
-            search = random.choice(["Burj Khalifa sunset golden skyline", "Dubai downtown night lights", "Dubai fountain aerial"])
-        elif any(w in topic_words for w in ["palm", "jumeirah", "beach", "coast", "island"]):
-            search = random.choice(["Palm Jumeirah Dubai aerial sunset", "Dubai beach luxury resort", "Palm Jumeirah night aerial"])
-        elif any(w in topic_words for w in ["invest", "capital", "money", "fund", "portfolio", "wealth"]):
-            search = random.choice(["Dubai skyline golden hour aerial", "luxury office interior modern", "Dubai financial centre towers"])
-        elif any(w in topic_words for w in ["luxury", "premium", "villa", "penthouse", "mansion"]):
-            search = random.choice(["Dubai luxury villa pool", "luxury penthouse interior modern", "premium real estate Dubai aerial"])
-        elif any(w in topic_words for w in ["yield", "rental", "return", "roi", "income"]):
-            search = random.choice(["Dubai towers sunset golden", "modern apartment building Dubai", "Dubai residential tower night"])
-        elif any(w in topic_words for w in ["construction", "built", "develop", "off-plan", "project"]):
-            search = random.choice(["Dubai construction skyline sunset", "modern building construction crane", "Dubai development aerial"])
-        elif any(w in topic_words for w in ["market", "transaction", "record", "data", "dld"]):
-            search = random.choice(["Dubai city aerial sunset panorama", "Dubai business district aerial", "modern Dubai skyline night"])
-        elif any(w in topic_words for w in ["war", "crisis", "fear", "uncertainty", "risk"]):
-            search = random.choice(["Dubai night skyline dramatic clouds", "Dubai skyline moody dark", "modern city night dramatic sky"])
-        elif any(w in topic_words for w in ["family", "community", "lifestyle", "living"]):
-            search = random.choice(["Dubai residential community aerial", "luxury family villa garden", "modern Dubai neighbourhood green"])
+        # Cover slides — brand-specific topic matching
+        if brand == "nucassa_holdings":
+            # Holdings = wealth, investment, institutional — NOT property photos
+            if any(w in topic_words for w in ["spv", "adgm", "structure", "legal", "regulat"]):
+                search = random.choice(["executive boardroom dark modern", "corporate office skyline night", "legal document signing dark"])
+            elif any(w in topic_words for w in ["custody", "bank", "dbs", "capital", "protect"]):
+                search = random.choice(["gold bars vault dark", "private banking office luxury", "safe deposit vault dark"])
+            elif any(w in topic_words for w in ["yield", "return", "income", "dividend", "perform"]):
+                search = random.choice(["stock market chart dark screen", "financial data analytics dark", "trading floor screens dark"])
+            elif any(w in topic_words for w in ["family office", "hnw", "wealth", "net worth"]):
+                search = random.choice(["luxury private jet interior", "yacht interior luxury dark", "fine dining dark ambient luxury"])
+            elif any(w in topic_words for w in ["exit", "liquidat", "realis", "cycle"]):
+                search = random.choice(["luxury watch close up dark background", "chess pieces dark strategy", "hourglass dark moody"])
+            else:
+                search = random.choice([
+                    "luxury private jet interior", "executive boardroom modern dark",
+                    "gold bars wealth dark", "luxury watch dark background",
+                    "private office skyline view night", "yacht deck ocean sunset",
+                    "champagne dark luxury ambient", "luxury car interior night",
+                    "fine dining dark moody", "corporate tower lobby dark",
+                ])
+        elif brand == "listr":
+            # ListR = property marketplace, Dubai real estate, disruptive
+            if any(w in topic_words for w in ["agent", "commission", "fee", "save"]):
+                search = random.choice(["modern Dubai apartment interior", "Dubai property keys handover", "Dubai real estate modern"])
+            elif any(w in topic_words for w in ["list", "sell", "seller", "direct"]):
+                search = random.choice(["Dubai villa exterior modern", "Dubai apartment balcony view", "modern property Dubai"])
+            elif any(w in topic_words for w in ["buy", "buyer", "search", "find"]):
+                search = random.choice(["Dubai skyline apartment view", "modern Dubai residential tower", "Dubai property aerial"])
+            else:
+                search = random.choice([
+                    "Dubai skyline sunset", "Dubai marina aerial", "Dubai residential tower modern",
+                    "Dubai apartment interior modern", "Dubai villa pool", "Dubai community aerial",
+                    "modern Dubai building exterior", "Dubai property balcony view",
+                ])
         else:
-            # Random selection from broad terms to avoid repetition
-            search = random.choice([
-                "Dubai skyline sunset golden hour", "Dubai aerial night city",
-                "luxury real estate Dubai", "Dubai modern architecture",
-                "Dubai night panorama", "premium Dubai waterfront",
-                "Dubai skyline dramatic sky", "modern luxury interior Dubai",
-            ])
+            # Nucassa RE = full-service agency, Dubai property market, data-led
+            if any(w in topic_words for w in ["marina", "yacht", "waterfront", "harbour", "creek"]):
+                search = random.choice(["Dubai marina sunset golden hour", "Dubai marina night aerial", "Dubai creek harbour waterfront"])
+            elif any(w in topic_words for w in ["downtown", "burj", "khalifa", "fountain"]):
+                search = random.choice(["Burj Khalifa sunset golden skyline", "Dubai downtown night lights", "Dubai fountain aerial"])
+            elif any(w in topic_words for w in ["palm", "jumeirah", "beach", "coast", "island"]):
+                search = random.choice(["Palm Jumeirah Dubai aerial sunset", "Dubai beach luxury resort", "Palm Jumeirah night aerial"])
+            elif any(w in topic_words for w in ["invest", "capital", "money", "fund", "portfolio"]):
+                search = random.choice(["Dubai skyline golden hour aerial", "luxury office interior modern", "Dubai financial centre towers"])
+            elif any(w in topic_words for w in ["luxury", "premium", "villa", "penthouse", "mansion"]):
+                search = random.choice(["Dubai luxury villa pool", "luxury penthouse interior modern", "premium real estate Dubai aerial"])
+            elif any(w in topic_words for w in ["yield", "rental", "return", "roi", "income"]):
+                search = random.choice(["Dubai towers sunset golden", "modern apartment building Dubai", "Dubai residential tower night"])
+            elif any(w in topic_words for w in ["construction", "built", "develop", "off-plan", "project"]):
+                search = random.choice(["Dubai construction skyline sunset", "modern building construction crane", "Dubai development aerial"])
+            elif any(w in topic_words for w in ["market", "transaction", "record", "data", "dld"]):
+                search = random.choice(["Dubai city aerial sunset panorama", "Dubai business district aerial", "modern Dubai skyline night"])
+            elif any(w in topic_words for w in ["war", "crisis", "fear", "uncertainty", "risk"]):
+                search = random.choice(["Dubai night skyline dramatic clouds", "Dubai skyline moody dark", "modern city night dramatic sky"])
+            elif any(w in topic_words for w in ["family", "community", "lifestyle", "living"]):
+                search = random.choice(["Dubai residential community aerial", "luxury family villa garden", "modern Dubai neighbourhood green"])
+            else:
+                search = random.choice([
+                    "Dubai skyline sunset golden hour", "Dubai aerial night city",
+                    "luxury real estate Dubai", "Dubai modern architecture",
+                    "Dubai night panorama", "premium Dubai waterfront",
+                ])
 
         photo_bytes = await _fetch_unsplash_photo(search, topic)
         if photo_bytes:
@@ -738,8 +832,8 @@ async def _fetch_photo_for_slide(slide_type: str, topic: str = "") -> bytes | No
         if photo_bytes:
             return photo_bytes
 
-    # Fallback to curated URLs
-    photos = UNSPLASH_PHOTOS.get(slide_type, UNSPLASH_PHOTOS["cover"])
+    # Fallback to brand-specific curated URLs
+    photos = brand_photos.get(slide_type, brand_photos.get("cover", []))
     if not photos:
         return None
     url = random.choice(photos)
@@ -903,7 +997,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
 
     if slide_index == 0:
         # ── COVER SLIDE: sharp photo + dark gradient + headline ──
-        photo_bytes = await _fetch_photo_for_slide("cover", topic + "_slide1")
+        photo_bytes = await _fetch_photo_for_slide("cover", topic + "_slide1", brand)
         if photo_bytes:
             bg = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
             bg = bg.resize((W, H), Image.LANCZOS)
@@ -981,7 +1075,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
             parts = s.split(":", 1)
             return (parts[1].strip(), parts[0].strip()) if len(parts) == 2 else (s, "")
 
-        photo_bytes = await _fetch_photo_for_slide("data", topic + "_slide2")
+        photo_bytes = await _fetch_photo_for_slide("data", topic + "_slide2", brand)
         if photo_bytes:
             bg = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
             bg = bg.resize((W, H), Image.LANCZOS)
