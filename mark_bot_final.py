@@ -27,6 +27,7 @@ import re
 import uuid
 import hashlib
 import time
+import random
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -445,7 +446,6 @@ async def generate_batch(brand: str, days: int = 14) -> list:
                 slots.append(slot)
 
     type_rotation = ["carousel", "carousel", "static", "carousel", "reels", "carousel", "story"]
-    import random
     topics = list(cfg["topics"])
     random.shuffle(topics)
 
@@ -486,8 +486,21 @@ LOGO_URLS = {
 
 # Unsplash search terms per slide type
 UNSPLASH_SEARCH_TERMS = {
-    "cover": ["Dubai skyline night lights", "Dubai marina night lights", "Dubai downtown night aerial", "Dubai night city lights", "luxury penthouse Dubai interior", "Dubai aerial palm jumeirah night"],
-    "data": ["dark modern architecture abstract", "luxury apartment interior moody", "Dubai creek harbour night", "dark office glass building", "abstract geometric dark building"],
+    "cover": [
+        "Dubai skyline night lights", "Dubai marina night lights", "Dubai downtown night aerial",
+        "Dubai night city lights", "luxury penthouse Dubai interior", "Dubai aerial palm jumeirah night",
+        "Dubai sunset golden hour", "Dubai creek harbour", "luxury villa pool Dubai",
+        "modern apartment interior luxury", "Dubai business bay towers", "Dubai waterfront luxury",
+        "Dubai Burj Khalifa night", "luxury real estate interior", "Dubai beach resort aerial",
+        "premium lounge interior dark", "Dubai fountain aerial night", "modern skyline dusk",
+        "luxury balcony city view night", "Dubai palm jumeirah aerial sunset",
+    ],
+    "data": [
+        "dark modern architecture abstract", "luxury apartment interior moody",
+        "Dubai creek harbour night", "dark office glass building", "abstract geometric dark building",
+        "modern skyscraper detail dark", "glass facade reflection night", "dark luxury marble interior",
+        "abstract architecture lines shadow", "concrete texture modern building",
+    ],
     "cta": [],
 }
 
@@ -495,20 +508,52 @@ UNSPLASH_SEARCH_TERMS = {
 # Curated Dubai golden hour/sunset photos — wide, editorial quality
 UNSPLASH_PHOTOS = {
     "cover": [
-        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=2000&h=2500&fit=crop&q=95",    # Dubai skyline sunset
-        "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=2000&h=2500&fit=crop&q=95",    # Dubai golden hour
-        "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=2000&h=2500&fit=crop&q=95",    # Dubai Marina aerial
-        "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=2000&h=2500&fit=crop&q=95",    # Dubai aerial warm
-        "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=2000&h=2500&fit=crop&q=95",       # Burj Khalifa golden
+        # Dubai skylines - varied angles and times
+        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=2000&h=2500&fit=crop&q=95",
+        # Marina and waterfront
+        "https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1546412414-e1885e51148b?w=2000&h=2500&fit=crop&q=95",
+        # Night Dubai
+        "https://images.unsplash.com/photo-1514632595-4944383f2737?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1547094078-51b2285dd404?w=2000&h=2500&fit=crop&q=95",
+        # Luxury interiors
+        "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=2000&h=2500&fit=crop&q=95",
+        # Desert and Palm
+        "https://images.unsplash.com/photo-1512632578888-169bbbc64f33?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1526495124232-a04e1849168c?w=2000&h=2500&fit=crop&q=95",
+        # Modern architecture
+        "https://images.unsplash.com/photo-1545893835-abaa50cbe628?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1487958449943-2429e8be8625?w=2000&h=2500&fit=crop&q=95",
+        # Aerial views
+        "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1582672060674-bc2bd808a8b5?w=2000&h=2500&fit=crop&q=95",
+        # Pool/resort luxury
+        "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=2000&h=2500&fit=crop&q=95",
     ],
     "data": [
-        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=2000&h=2500&fit=crop&q=95",    # Dark abstract building
-        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=2000&h=2500&fit=crop&q=95",       # Dark skyscraper upward
+        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1478860409698-8707f313ee8b?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1451976426598-a7593bd6d0b2?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1494145904049-0dca59b4bbad?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1462206092226-f46025ffe607?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1519999482648-25049ddd37b1?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1448630360428-65456885c650?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1459767129954-1b1c1f9b9ace?w=2000&h=2500&fit=crop&q=95",
+        "https://images.unsplash.com/photo-1464938050520-ef2571e6e7aa?w=2000&h=2500&fit=crop&q=95",
     ],
     "cta": [],
 }
 
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY", "")
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 
 # Font paths — try common macOS/Linux locations
 def _find_font(name: str, fallbacks: list[str] = None) -> str:
@@ -566,8 +611,8 @@ def _hex_to_rgba(hex_color: str, alpha: int = 255) -> tuple:
 
 async def _fetch_unsplash_photo(search_term: str, topic: str = "") -> bytes | None:
     """Fetch a photo from Unsplash API search, sized for 1080x1350."""
-    # Use topic hash for consistent photo selection
-    seed = int(hashlib.md5((topic + search_term).encode()).hexdigest(), 16)
+    # Use time-based seed for variety across renders
+    seed = int(time.time() * 1000) + hash(topic + search_term)
 
     if UNSPLASH_ACCESS_KEY:
         try:
@@ -591,9 +636,33 @@ async def _fetch_unsplash_photo(search_term: str, topic: str = "") -> bytes | No
     return None
 
 
+async def _fetch_pexels_photo(search_term: str) -> bytes | None:
+    """Fetch a photo from Pexels API as secondary source."""
+    if not PEXELS_API_KEY:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(
+                "https://api.pexels.com/v1/search",
+                params={"query": search_term, "per_page": 15, "orientation": "portrait"},
+                headers={"Authorization": PEXELS_API_KEY},
+            )
+            if r.status_code == 200:
+                photos = r.json().get("photos", [])
+                if photos:
+                    photo = random.choice(photos)
+                    url = photo["src"]["large2x"]
+                    img_r = await client.get(url, timeout=20)
+                    if img_r.status_code == 200:
+                        return img_r.content
+    except Exception as e:
+        log.error(f"Pexels API error: {e}")
+    return None
+
+
 async def _fetch_photo_for_slide(slide_type: str, topic: str = "") -> bytes | None:
-    """Fetch a background photo — Unsplash API search first, curated fallback."""
-    seed = int(hashlib.md5(topic.encode()).hexdigest(), 16)
+    """Fetch a background photo — Unsplash API search first, Pexels fallback, then curated."""
+    seed = int(time.time() * 1000) + hash(topic)
 
     # Build a search query from the topic — different per slide type
     if UNSPLASH_ACCESS_KEY and slide_type != "cta":
@@ -605,14 +674,22 @@ async def _fetch_photo_for_slide(slide_type: str, topic: str = "") -> bytes | No
             elif any(w in topic_words for w in ["palm", "jumeirah"]):
                 search = "Dubai architecture modern dark"
             else:
-                search = "Dubai skyscraper abstract dark"
+                search = random.choice([
+                    "Dubai skyscraper abstract dark", "dark modern architecture abstract",
+                    "glass facade reflection night", "abstract architecture lines shadow",
+                    "dark luxury marble interior", "modern skyscraper detail dark",
+                ])
             photo_bytes = await _fetch_unsplash_photo(search, topic)
+            if photo_bytes:
+                return photo_bytes
+            # Try Pexels as secondary source
+            photo_bytes = await _fetch_pexels_photo(search)
             if photo_bytes:
                 return photo_bytes
             photos = UNSPLASH_PHOTOS.get("data", UNSPLASH_PHOTOS["cover"])
             if not photos:
                 return None
-            url = photos[seed % len(photos)]
+            url = random.choice(photos)
             try:
                 async with httpx.AsyncClient(timeout=20) as client:
                     r = await client.get(url)
@@ -624,26 +701,40 @@ async def _fetch_photo_for_slide(slide_type: str, topic: str = "") -> bytes | No
 
         # Cover slides use golden hour/sunset
         topic_words = topic.lower()
-        if any(w in topic_words for w in ["marina", "yacht", "waterfront"]):
-            search = "Dubai marina sunset golden hour"
-        elif any(w in topic_words for w in ["downtown", "burj", "khalifa"]):
-            search = "Burj Khalifa sunset golden skyline"
-        elif any(w in topic_words for w in ["palm", "jumeirah", "beach", "coast"]):
-            search = "Palm Jumeirah Dubai aerial sunset"
-        elif any(w in topic_words for w in ["invest", "capital", "money", "fund"]):
-            search = "Dubai skyline golden hour aerial"
-        elif any(w in topic_words for w in ["luxury", "premium", "villa"]):
-            search = "Dubai luxury skyline sunset"
-        elif any(w in topic_words for w in ["yield", "rental", "return"]):
-            search = "Dubai towers sunset golden"
-        elif any(w in topic_words for w in ["construction", "built", "develop"]):
-            search = "Dubai construction skyline sunset"
-        elif any(w in topic_words for w in ["market", "transaction", "record"]):
-            search = "Dubai city aerial sunset panorama"
+        if any(w in topic_words for w in ["marina", "yacht", "waterfront", "harbour", "creek"]):
+            search = random.choice(["Dubai marina sunset golden hour", "Dubai marina night aerial", "Dubai creek harbour waterfront"])
+        elif any(w in topic_words for w in ["downtown", "burj", "khalifa", "fountain"]):
+            search = random.choice(["Burj Khalifa sunset golden skyline", "Dubai downtown night lights", "Dubai fountain aerial"])
+        elif any(w in topic_words for w in ["palm", "jumeirah", "beach", "coast", "island"]):
+            search = random.choice(["Palm Jumeirah Dubai aerial sunset", "Dubai beach luxury resort", "Palm Jumeirah night aerial"])
+        elif any(w in topic_words for w in ["invest", "capital", "money", "fund", "portfolio", "wealth"]):
+            search = random.choice(["Dubai skyline golden hour aerial", "luxury office interior modern", "Dubai financial centre towers"])
+        elif any(w in topic_words for w in ["luxury", "premium", "villa", "penthouse", "mansion"]):
+            search = random.choice(["Dubai luxury villa pool", "luxury penthouse interior modern", "premium real estate Dubai aerial"])
+        elif any(w in topic_words for w in ["yield", "rental", "return", "roi", "income"]):
+            search = random.choice(["Dubai towers sunset golden", "modern apartment building Dubai", "Dubai residential tower night"])
+        elif any(w in topic_words for w in ["construction", "built", "develop", "off-plan", "project"]):
+            search = random.choice(["Dubai construction skyline sunset", "modern building construction crane", "Dubai development aerial"])
+        elif any(w in topic_words for w in ["market", "transaction", "record", "data", "dld"]):
+            search = random.choice(["Dubai city aerial sunset panorama", "Dubai business district aerial", "modern Dubai skyline night"])
+        elif any(w in topic_words for w in ["war", "crisis", "fear", "uncertainty", "risk"]):
+            search = random.choice(["Dubai night skyline dramatic clouds", "Dubai skyline moody dark", "modern city night dramatic sky"])
+        elif any(w in topic_words for w in ["family", "community", "lifestyle", "living"]):
+            search = random.choice(["Dubai residential community aerial", "luxury family villa garden", "modern Dubai neighbourhood green"])
         else:
-            search = "Dubai skyline sunset golden hour"
+            # Random selection from broad terms to avoid repetition
+            search = random.choice([
+                "Dubai skyline sunset golden hour", "Dubai aerial night city",
+                "luxury real estate Dubai", "Dubai modern architecture",
+                "Dubai night panorama", "premium Dubai waterfront",
+                "Dubai skyline dramatic sky", "modern luxury interior Dubai",
+            ])
 
         photo_bytes = await _fetch_unsplash_photo(search, topic)
+        if photo_bytes:
+            return photo_bytes
+        # Try Pexels as secondary source
+        photo_bytes = await _fetch_pexels_photo(search)
         if photo_bytes:
             return photo_bytes
 
@@ -651,7 +742,7 @@ async def _fetch_photo_for_slide(slide_type: str, topic: str = "") -> bytes | No
     photos = UNSPLASH_PHOTOS.get(slide_type, UNSPLASH_PHOTOS["cover"])
     if not photos:
         return None
-    url = photos[seed % len(photos)]
+    url = random.choice(photos)
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.get(url)
@@ -882,7 +973,6 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
 
     elif slide_index == 1:
         # ── DATA SLIDE: dark photo bg + 3 stats — MULTIPLE LAYOUTS ──
-        import random
         stats = slide.get("stats", ["—", "—", "—"])
         while len(stats) < 3:
             stats.append("—")
