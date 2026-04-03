@@ -207,6 +207,7 @@ _temp_images: dict = {}        # image_id → bytes (temporary image hosting for
 pending_batches: dict = {}     # batch_id → list[content_dict]
 last_batch: dict = {}          # brand → list[content_dict]
 li_oauth_states: dict = {}     # state → brand (for OAuth flow)
+posting_log: list = []         # [{brand, platforms, topic, timestamp, success}] — persists per deploy
 
 app = FastAPI()
 
@@ -1711,6 +1712,21 @@ async def post_content(content: dict, brand: str) -> dict:
         except Exception:
             pass
 
+    # Record to posting log so Alex can query what was published
+    platform_count = sum(1 for k, v in results.items() if k not in ("drive_saved", "files_sent") and "error" not in str(v))
+    total_platforms = sum(1 for k in results if k not in ("drive_saved", "files_sent"))
+    posting_log.append({
+        "brand": brand,
+        "brand_name": BRANDS[brand]["name"],
+        "content_type": ct,
+        "topic": content.get("_topic", content.get("topic", "")),
+        "platforms_ok": platform_count,
+        "platforms_total": total_platforms,
+        "platform_results": {k: ("ok" if "error" not in str(v) else str(v)) for k, v in results.items() if k not in ("drive_saved", "files_sent")},
+        "drive_saved": results.get("drive_saved", False),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+
     log.info(f"Post results for {brand}: {results}")
     return results
 
@@ -2253,6 +2269,18 @@ async def api_status():
         "linkedin_connected": bool(LI_ACCESS_TOKEN),
         "pending_approvals": len(pending_approvals),
         "brands": status,
+    }
+
+
+@app.get("/posting_log")
+async def api_posting_log():
+    """Return today's posting log so Alex can query what was actually published."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_posts = [p for p in posting_log if p["timestamp"].startswith(today)]
+    return {
+        "date": today,
+        "total_posts": len(today_posts),
+        "posts": today_posts,
     }
 
 
