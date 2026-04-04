@@ -87,7 +87,9 @@ IG_HOLDINGS         = "17841406888818689"   # @nucassaholdings_ltd
 IG_LISTR            = "17841475489496432"   # @listr.ae
 
 # Facebook Page IDs
-FB_NUCASSA_RE       = "106173405736149"     # Nucassa Real Estate Dubai (only FB page Mark posts to)
+FB_NUCASSA_RE       = "106173405736149"     # Nucassa Real Estate Dubai
+FB_HOLDINGS         = "963897483477807"     # Nucassa.Holdings
+FB_LISTR            = "1085489144643633"    # ListR
 
 # Railway public URL for LinkedIn OAuth callback
 RAILWAY_URL         = os.getenv("RAILWAY_URL", "https://mark-bot.up.railway.app")
@@ -133,9 +135,9 @@ BRANDS = {
         "name": "Nucassa Holdings Ltd",
         "handle": "@nucassaholdings_ltd",
         "website": "www.nucassa.holdings",
-        "platforms": ["instagram", "linkedin"],
+        "platforms": ["instagram", "facebook", "linkedin"],
         "ig_account_id": IG_HOLDINGS,
-        "fb_page_id": None,
+        "fb_page_id": FB_HOLDINGS,
         "li_page_id": LI_HOLDINGS_PAGE,
         "tone": "institutional, precise, investor-grade. ADGM SPV, DBS custody, capital protection. Goldman Sachs meets Dubai.",
         "cta": "Message us to learn more",
@@ -168,9 +170,9 @@ BRANDS = {
         "name": "ListR.ae",
         "handle": "@listr.ae",
         "website": "ListR.ae",
-        "platforms": ["instagram"],
+        "platforms": ["instagram", "facebook"],
         "ig_account_id": IG_LISTR,
-        "fb_page_id": None,
+        "fb_page_id": FB_LISTR,
         "li_page_id": None,
         "tone": "modern, direct, disruptive. Cutting unnecessary fees, empowering buyers and sellers. Sharp and confident.",
         "cta": "Sign up free at ListR.ae",
@@ -1658,7 +1660,7 @@ async def post_content(content: dict, brand: str) -> dict:
         else:
             results["instagram"] = {"error": "No image rendered"}
 
-    # ── FACEBOOK (Nucassa RE only) ──
+    # ── FACEBOOK ──
     if "facebook" in cfg["platforms"] and fb_page_id and images:
         results["facebook"] = await publish_facebook(fb_page_id, images[0], ig_caption)
 
