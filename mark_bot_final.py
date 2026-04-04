@@ -1005,7 +1005,7 @@ async def _load_logo_image(brand: str) -> Image.Image | None:
 
 def _draw_text_wrapped(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont,
                        max_width: int, x: int, y: int, fill: tuple,
-                       align: str = "left", line_spacing: int = 8) -> int:
+                       align: str = "left", line_spacing: int = 16) -> int:
     """Draw wrapped text and return the total height used."""
     words = text.split()
     lines = []
