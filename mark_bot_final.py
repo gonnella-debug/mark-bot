@@ -1477,6 +1477,8 @@ async def upload_image_to_ig(ig_account_id: str, image_bytes: bytes, caption: st
         log.error("Could not get public URL for IG upload")
         return None
 
+    # Small delay to ensure image is fully served before Meta fetches it
+    await asyncio.sleep(2)
     upload_url = f"https://graph.facebook.com/v18.0/{ig_account_id}/media"
     params = {
         "access_token": META_SYSTEM_TOKEN,
@@ -1488,11 +1490,17 @@ async def upload_image_to_ig(ig_account_id: str, image_bytes: bytes, caption: st
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(upload_url, params=params)
-            data = r.json()
-            if "id" in data:
-                return data["id"]
-            log.error(f"IG upload error: {data}")
+            for attempt in range(3):
+                r = await client.post(upload_url, params=params)
+                data = r.json()
+                if "id" in data:
+                    return data["id"]
+                if r.status_code == 500:
+                    log.warning(f"IG upload 500, retry {attempt+1}/3...")
+                    await asyncio.sleep(3 + attempt * 2)
+                    continue
+                log.error(f"IG upload error: {data}")
+                return None
     except Exception as e:
         log.error(f"IG upload exception: {e}")
     return None
