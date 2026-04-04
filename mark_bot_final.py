@@ -981,6 +981,20 @@ _VERIFIED_IMAGES = {
         "https://images.unsplash.com/photo-1694675272206-85c7e00da3e3?w=1200&h=1500&fit=crop&q=90",
         "https://images.unsplash.com/photo-1706464971762-bcacd432cf22?w=1200&h=1500&fit=crop&q=90",
     ],
+    "corporate_financial": [
+        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=1500&fit=crop&q=90",
+        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=1200&h=1500&fit=crop&q=90",
+        "https://images.unsplash.com/photo-1768069794857-9306ac167c6e?w=1200&h=1500&fit=crop&q=90",
+        "https://images.unsplash.com/photo-1768069794830-f2bd21c67621?w=1200&h=1500&fit=crop&q=90",
+        "https://images.unsplash.com/photo-1760263137665-366b1dcf8e1f?w=1200&h=1500&fit=crop&q=90",
+        "https://images.unsplash.com/photo-1760263137552-c42c62621220?w=1200&h=1500&fit=crop&q=90",
+        "https://images.unsplash.com/photo-1608991156162-3c55b3cf05d3?w=1200&h=1500&fit=crop&q=90",
+        "https://images.unsplash.com/photo-1573755654354-4235c9ab1ac9?w=1200&h=1500&fit=crop&q=90",
+        "https://images.unsplash.com/photo-1604667758760-ffb2931593a0?w=1200&h=1500&fit=crop&q=90",
+        "https://images.unsplash.com/photo-1619259896604-0fe0fd32ac43?w=1200&h=1500&fit=crop&q=90",
+        "https://images.unsplash.com/photo-1574886248530-3063f166bf95?w=1200&h=1500&fit=crop&q=90",
+        "https://images.unsplash.com/photo-1553696779-79d887fdd22a?w=1200&h=1500&fit=crop&q=90",
+    ],
     "modern_architecture": [
         "https://images.unsplash.com/photo-1604667758760-ffb2931593a0?w=1200&h=1500&fit=crop&q=90",
         "https://images.unsplash.com/photo-1619259896604-0fe0fd32ac43?w=1200&h=1500&fit=crop&q=90",
@@ -1016,18 +1030,23 @@ async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = 
     if slide_type == "cta":
         return None
 
-    if brand in ("nucassa_holdings", "listr"):
-        return _create_branded_background(brand, slide_type)
-
-    # Pick category based on topic keywords
     topic_lower = topic.lower()
-    category = None
-    for keyword, cat in _TOPIC_TO_CATEGORY.items():
-        if keyword in topic_lower:
-            category = cat
-            break
-    if not category:
-        category = random.choice(["dubai_skyline", "dubai_towers", "night_city"])
+
+    # Brand-specific default categories
+    if brand == "nucassa_holdings":
+        category = "corporate_financial"
+    elif brand == "listr":
+        # ListR = property marketplace — use property + Dubai images
+        category = random.choice(["luxury_property", "dubai_skyline", "modern_architecture"])
+    else:
+        # Nucassa RE — pick category based on topic keywords
+        category = None
+        for keyword, cat in _TOPIC_TO_CATEGORY.items():
+            if keyword in topic_lower:
+                category = cat
+                break
+        if not category:
+            category = random.choice(["dubai_skyline", "dubai_towers", "night_city"])
 
     pool = _VERIFIED_IMAGES.get(category, _VERIFIED_IMAGES["dubai_skyline"])
     available = [u for u in pool if u not in _recent_image_urls]
