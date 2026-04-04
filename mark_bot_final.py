@@ -1514,11 +1514,19 @@ async def publish_ig_carousel(ig_account_id: str, container_ids: list[str], capt
             carousel_id = r.json().get("id")
             if not carousel_id:
                 return {"error": r.json()}
-            # Publish
+            # Wait for Meta to process media, then publish with retries
             pub_url = f"https://graph.facebook.com/v18.0/{ig_account_id}/media_publish"
             pub_params = {"access_token": META_SYSTEM_TOKEN, "creation_id": carousel_id}
-            r2 = await client.post(pub_url, params=pub_params)
-            return r2.json()
+            for attempt in range(5):
+                await asyncio.sleep(5 + attempt * 3)  # 5s, 8s, 11s, 14s, 17s
+                r2 = await client.post(pub_url, params=pub_params)
+                result = r2.json()
+                if "id" in result:
+                    return result
+                if result.get("error", {}).get("code") != 9007:
+                    return result  # Different error, don't retry
+                log.info(f"IG carousel not ready, retry {attempt+1}/5...")
+            return result  # Return last attempt result
     except Exception as e:
         log.error(f"Carousel publish error: {e}")
         return {"error": str(e)}
@@ -1533,8 +1541,16 @@ async def publish_ig_single(ig_account_id: str, image_bytes: bytes, caption: str
     params = {"access_token": META_SYSTEM_TOKEN, "creation_id": container_id}
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(pub_url, params=params)
-            return r.json()
+            for attempt in range(5):
+                await asyncio.sleep(3 + attempt * 2)
+                r = await client.post(pub_url, params=params)
+                result = r.json()
+                if "id" in result:
+                    return result
+                if result.get("error", {}).get("code") != 9007:
+                    return result
+                log.info(f"IG single not ready, retry {attempt+1}/5...")
+            return result
     except Exception as e:
         return {"error": str(e)}
 
