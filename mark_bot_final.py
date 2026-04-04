@@ -1149,7 +1149,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
             bg.paste(photo, (0, 0))
 
             # Fade photo to black at bottom edge
-            fade = Image.new("RGBA", (W, photo_h), (0, 0, 0, 0))
+            fade = Image.new("RGBA", (W, H), (0, 0, 0, 0))
             fade_draw = ImageDraw.Draw(fade)
             fade_start = int(photo_h * 0.6)
             for y in range(fade_start, photo_h):
@@ -1277,7 +1277,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
                 photo = photo.crop((left, top_crop, left + W, top_crop + photo_split))
                 bg.paste(photo, (0, 0))
                 # Fade to black
-                fade = Image.new("RGBA", (W, photo_split), (0, 0, 0, 0))
+                fade = Image.new("RGBA", (W, H), (0, 0, 0, 0))
                 fd = ImageDraw.Draw(fade)
                 fade_start = int(photo_split * 0.5)
                 for y in range(fade_start, photo_split):
