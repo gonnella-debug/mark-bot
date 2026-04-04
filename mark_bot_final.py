@@ -722,125 +722,183 @@ async def _fetch_pexels_photo(search_term: str) -> bytes | None:
     return None
 
 
-async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = "nucassa_re") -> bytes | None:
-    """Fetch a background photo — brand-aware search with Unsplash, Pexels fallback, then curated."""
-    seed = int(time.time() * 1000) + hash(topic)
+# ── Drive brochure image cache ──
+_drive_image_cache: list[bytes] = []  # cached property images extracted from brochure PDFs
+_drive_cache_time: float = 0.0
 
-    # Get brand-specific search terms and fallbacks
-    brand_terms = BRAND_SEARCH_TERMS.get(brand, BRAND_SEARCH_TERMS["nucassa_re"])
-    brand_photos = BRAND_FALLBACK_PHOTOS.get(brand, BRAND_FALLBACK_PHOTOS["nucassa_re"])
 
-    # Build a search query — brand-specific
-    if (UNSPLASH_ACCESS_KEY or PEXELS_API_KEY) and slide_type != "cta":
-        topic_words = topic.lower()
-
-        # Data slides — use brand-specific dark/abstract terms
-        if slide_type == "data":
-            search = random.choice(brand_terms.get("data", ["dark modern architecture abstract"]))
-            photo_bytes = await _fetch_unsplash_photo(search, topic)
-            if photo_bytes:
-                return photo_bytes
-            photo_bytes = await _fetch_pexels_photo(search)
-            if photo_bytes:
-                return photo_bytes
-            photos = brand_photos.get("data", brand_photos.get("cover", []))
-            if photos:
-                url = random.choice(photos)
+async def _extract_images_from_pdf_bytes(pdf_bytes: bytes, min_size: int = 50000) -> list[bytes]:
+    """Extract large images from a PDF using PyMuPDF. Returns list of image bytes."""
+    images = []
+    try:
+        import fitz
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        for page in doc:
+            for img_info in page.get_images(full=True):
+                xref = img_info[0]
                 try:
-                    async with httpx.AsyncClient(timeout=20) as client:
-                        r = await client.get(url)
-                        if r.status_code == 200:
-                            return r.content
-                except Exception as e:
-                    log.error(f"Photo fetch error: {e}")
+                    base_image = doc.extract_image(xref)
+                    if base_image and len(base_image["image"]) >= min_size:
+                        images.append(base_image["image"])
+                except Exception:
+                    continue
+        doc.close()
+    except Exception as e:
+        log.error(f"PDF image extraction error: {e}")
+    return images
+
+
+async def _fetch_drive_property_image() -> bytes | None:
+    """Fetch a random property image from Drive brochure PDFs. Caches extracted images for 6 hours."""
+    global _drive_image_cache, _drive_cache_time
+
+    # Return from cache if fresh (6 hours)
+    if _drive_image_cache and (time.time() - _drive_cache_time) < 21600:
+        return random.choice(_drive_image_cache)
+
+    if not GDRIVE_API_KEY:
+        return None
+
+    try:
+        # List all developer folders
+        dev_folders = await list_drive_files(GDRIVE_FOLDER_ID)
+        dev_folders = [f for f in dev_folders if f.get("mimeType") == "application/vnd.google-apps.folder"]
+
+        if not dev_folders:
             return None
 
-        # Cover slides — brand-specific topic matching
-        if brand == "nucassa_holdings":
-            # Holdings = ADGM SPV, DBS custody, institutional investment — corporate/financial imagery ONLY
-            if any(w in topic_words for w in ["spv", "adgm", "structure", "legal", "regulat"]):
-                search = random.choice(["Abu Dhabi financial district tower night", "DIFC Dubai office tower night", "corporate legal document signing dark"])
-            elif any(w in topic_words for w in ["custody", "bank", "dbs", "capital", "protect"]):
-                search = random.choice(["bank vault door steel dark", "safe deposit box vault dark", "corporate banking office dark modern"])
-            elif any(w in topic_words for w in ["yield", "return", "income", "dividend", "perform"]):
-                search = random.choice(["financial chart analytics dark screen", "portfolio performance chart dark", "stock market data dark screen"])
-            elif any(w in topic_words for w in ["family office", "hnw", "wealth", "net worth", "investor"]):
-                search = random.choice(["luxury corporate boardroom skyline dark", "Dubai financial centre tower night", "private office skyline window dark"])
-            elif any(w in topic_words for w in ["exit", "liquidat", "realis", "cycle"]):
-                search = random.choice(["corporate strategy meeting dark", "financial district aerial night", "Dubai skyline business bay night"])
-            elif any(w in topic_words for w in ["real estate", "asset", "property", "allocation"]):
-                search = random.choice(["Dubai skyline aerial night financial district", "glass tower office dark reflection", "Dubai business bay towers night"])
-            else:
-                search = random.choice([
-                    "Dubai financial district DIFC night", "corporate boardroom dark skyline view",
-                    "bank vault steel door dark", "luxury office interior dark modern",
-                    "Dubai business tower night aerial", "corporate signing document pen dark",
-                    "financial centre glass tower night", "Abu Dhabi skyline night towers",
-                ])
-        elif brand == "listr":
-            # ListR = property marketplace, Dubai real estate, disruptive
-            if any(w in topic_words for w in ["agent", "commission", "fee", "save"]):
-                search = random.choice(["modern Dubai apartment interior", "Dubai property keys handover", "Dubai real estate modern"])
-            elif any(w in topic_words for w in ["list", "sell", "seller", "direct"]):
-                search = random.choice(["Dubai villa exterior modern", "Dubai apartment balcony view", "modern property Dubai"])
-            elif any(w in topic_words for w in ["buy", "buyer", "search", "find"]):
-                search = random.choice(["Dubai skyline apartment view", "modern Dubai residential tower", "Dubai property aerial"])
-            else:
-                search = random.choice([
-                    "Dubai skyline sunset", "Dubai marina aerial", "Dubai residential tower modern",
-                    "Dubai apartment interior modern", "Dubai villa pool", "Dubai community aerial",
-                    "modern Dubai building exterior", "Dubai property balcony view",
-                ])
-        else:
-            # Nucassa RE = full-service agency, Dubai property market, data-led
-            if any(w in topic_words for w in ["marina", "yacht", "waterfront", "harbour", "creek"]):
-                search = random.choice(["Dubai marina sunset golden hour", "Dubai marina night aerial", "Dubai creek harbour waterfront"])
-            elif any(w in topic_words for w in ["downtown", "burj", "khalifa", "fountain"]):
-                search = random.choice(["Burj Khalifa sunset golden skyline", "Dubai downtown night lights", "Dubai fountain aerial"])
-            elif any(w in topic_words for w in ["palm", "jumeirah", "beach", "coast", "island"]):
-                search = random.choice(["Palm Jumeirah Dubai aerial sunset", "Dubai beach luxury resort", "Palm Jumeirah night aerial"])
-            elif any(w in topic_words for w in ["invest", "capital", "money", "fund", "portfolio"]):
-                search = random.choice(["Dubai skyline golden hour aerial", "luxury office interior modern", "Dubai financial centre towers"])
-            elif any(w in topic_words for w in ["luxury", "premium", "villa", "penthouse", "mansion"]):
-                search = random.choice(["Dubai luxury villa pool", "luxury penthouse interior modern", "premium real estate Dubai aerial"])
-            elif any(w in topic_words for w in ["yield", "rental", "return", "roi", "income"]):
-                search = random.choice(["Dubai towers sunset golden", "modern apartment building Dubai", "Dubai residential tower night"])
-            elif any(w in topic_words for w in ["construction", "built", "develop", "off-plan", "project"]):
-                search = random.choice(["Dubai construction skyline sunset", "modern building construction crane", "Dubai development aerial"])
-            elif any(w in topic_words for w in ["market", "transaction", "record", "data", "dld"]):
-                search = random.choice(["Dubai city aerial sunset panorama", "Dubai business district aerial", "modern Dubai skyline night"])
-            elif any(w in topic_words for w in ["war", "crisis", "fear", "uncertainty", "risk"]):
-                search = random.choice(["Dubai night skyline dramatic clouds", "Dubai skyline moody dark", "modern city night dramatic sky"])
-            elif any(w in topic_words for w in ["family", "community", "lifestyle", "living"]):
-                search = random.choice(["Dubai residential community aerial", "luxury family villa garden", "modern Dubai neighbourhood green"])
-            else:
-                search = random.choice([
-                    "Dubai skyline sunset golden hour", "Dubai aerial night city",
-                    "luxury real estate Dubai", "Dubai modern architecture",
-                    "Dubai night panorama", "premium Dubai waterfront",
-                ])
+        # Pick 5 random developers and look for brochure PDFs
+        sample_devs = random.sample(dev_folders, min(5, len(dev_folders)))
+        all_images: list[bytes] = []
 
-        photo_bytes = await _fetch_unsplash_photo(search, topic)
-        if photo_bytes:
-            return photo_bytes
-        # Try Pexels as secondary source
-        photo_bytes = await _fetch_pexels_photo(search)
-        if photo_bytes:
-            return photo_bytes
+        async with httpx.AsyncClient(timeout=30) as client:
+            for dev in sample_devs:
+                if len(all_images) >= 30:
+                    break
+                # List projects under this developer
+                projects = await list_drive_files(dev["id"])
+                project_folders = [f for f in projects if f.get("mimeType") == "application/vnd.google-apps.folder"]
+                sample_projects = random.sample(project_folders, min(3, len(project_folders)))
 
-    # Fallback to brand-specific curated URLs
-    photos = brand_photos.get(slide_type, brand_photos.get("cover", []))
-    if not photos:
-        return None
-    url = random.choice(photos)
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.get(url)
-            if r.status_code == 200:
-                return r.content
+                for proj in sample_projects:
+                    if len(all_images) >= 30:
+                        break
+                    # Look for Brochure subfolder
+                    proj_contents = await list_drive_files(proj["id"])
+                    brochure_folder = next(
+                        (f for f in proj_contents if f["name"].lower() == "brochure" and "folder" in f.get("mimeType", "")),
+                        None
+                    )
+                    if not brochure_folder:
+                        continue
+
+                    # Get PDFs from brochure folder
+                    brochure_files = await list_drive_files(brochure_folder["id"])
+                    pdfs = [f for f in brochure_files if f.get("mimeType") == "application/pdf"]
+
+                    for pdf_file in pdfs[:1]:  # Just one PDF per project
+                        try:
+                            r = await client.get(
+                                f"https://www.googleapis.com/drive/v3/files/{pdf_file['id']}",
+                                params={"alt": "media", "key": GDRIVE_API_KEY},
+                                timeout=30,
+                            )
+                            if r.status_code == 200:
+                                imgs = await _extract_images_from_pdf_bytes(r.content)
+                                if imgs:
+                                    # Take the largest images (most likely hero renders)
+                                    imgs.sort(key=len, reverse=True)
+                                    all_images.extend(imgs[:3])
+                                    log.info(f"Extracted {len(imgs[:3])} images from {pdf_file['name']}")
+                        except Exception as e:
+                            log.error(f"Drive PDF fetch error ({pdf_file['name']}): {e}")
+
+        if all_images:
+            _drive_image_cache = all_images
+            _drive_cache_time = time.time()
+            log.info(f"Drive image cache refreshed: {len(all_images)} property images")
+            return random.choice(all_images)
+
     except Exception as e:
-        log.error(f"Photo fetch fallback error: {e}")
+        log.error(f"Drive property image pipeline error: {e}")
+
     return None
+
+
+def _create_branded_background(brand: str, slide_type: str = "cover") -> bytes:
+    """Generate a clean branded background for Holdings and ListR — no stock photos."""
+    cfg = BRANDS[brand]
+    W, H = 1080, 1350
+    primary = _hex_to_rgb(cfg["color_primary"])
+    accent = _hex_to_rgb(cfg["color_accent"])
+    secondary = _hex_to_rgb(cfg.get("color_secondary", "#3b3b3b"))
+
+    img = Image.new("RGBA", (W, H), (*primary, 255))
+    draw = ImageDraw.Draw(img)
+
+    if brand == "nucassa_holdings":
+        # Institutional: dark base with subtle gold geometric accents
+        if slide_type == "data":
+            # Very dark with thin accent lines
+            for i in range(0, H, 90):
+                opacity = random.randint(8, 20)
+                draw.line([(0, i), (W, i)], fill=(*accent, opacity), width=1)
+        else:
+            # Diagonal accent stripe (subtle)
+            for i in range(-H, W + H, 6):
+                opacity = random.randint(5, 15)
+                draw.line([(i, 0), (i + H, H)], fill=(*accent, opacity), width=1)
+            # Bottom accent bar
+            draw.rectangle([(0, H - 4), (W, H)], fill=(*accent, 60))
+
+    elif brand == "listr":
+        # Modern/bold: black base with gold geometric elements
+        if slide_type == "data":
+            # Grid pattern
+            for x in range(0, W, 120):
+                draw.line([(x, 0), (x, H)], fill=(*accent, 12), width=1)
+            for y in range(0, H, 120):
+                draw.line([(0, y), (W, y)], fill=(*accent, 12), width=1)
+        else:
+            # Bold angular accent
+            points = [(0, H * 0.7), (W, H * 0.5), (W, H * 0.55), (0, H * 0.75)]
+            draw.polygon(points, fill=(*accent, 25))
+            # Second stripe
+            points2 = [(0, H * 0.78), (W, H * 0.58), (W, H * 0.60), (0, H * 0.80)]
+            draw.polygon(points2, fill=(*accent, 15))
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", quality=95)
+    return buf.getvalue()
+
+
+async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = "nucassa_re") -> bytes | None:
+    """Fetch a background image for a slide — brand-aware sourcing."""
+
+    # CTA slides always get solid background
+    if slide_type == "cta":
+        return None
+
+    # ── NUCASSA RE: Use real property images from Drive brochure PDFs ──
+    if brand == "nucassa_re":
+        photo = await _fetch_drive_property_image()
+        if photo:
+            return photo
+        # Fallback: curated Dubai shots (known good images)
+        fallbacks = BRAND_FALLBACK_PHOTOS.get("nucassa_re", {}).get(slide_type, [])
+        if fallbacks:
+            url = random.choice(fallbacks)
+            try:
+                async with httpx.AsyncClient(timeout=20) as client:
+                    r = await client.get(url)
+                    if r.status_code == 200:
+                        return r.content
+            except Exception as e:
+                log.error(f"Fallback photo error: {e}")
+        return None
+
+    # ── HOLDINGS & LISTR: Clean branded backgrounds — no stock photos ──
+    return _create_branded_background(brand, slide_type)
 
 
 async def _load_logo_image(brand: str) -> Image.Image | None:
