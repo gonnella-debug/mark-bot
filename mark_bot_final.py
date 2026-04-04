@@ -1077,330 +1077,257 @@ def _add_watermark_logo(img: Image.Image, logo: Image.Image, opacity: float = 0.
 
 
 async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> bytes | None:
-    """Render a slide using Pillow with real photos, logos, and brand styling."""
+    """Render a slide matching the Nucassa design standard:
+    - Cover: photo top 55%, fade to black, text on black, large watermark logo
+    - Content: solid black, white headlines + accent emphasis, > chevron bullets, logo watermark top-right
+    - CTA: clean black, accent CTA, large centered logo with brand name
+    """
     cfg = BRANDS[brand]
     slides = content.get("slides", [])
     if slide_index >= len(slides):
         return None
     slide = slides[slide_index]
     topic = content.get("_topic", "")
+    total_slides = len(slides)
+    is_last = slide_index == total_slides - 1
 
     W, H = 1080, 1350
     accent = _hex_to_rgb(cfg["color_accent"])
     accent_rgba = _hex_to_rgba(cfg["color_accent"])
     primary = _hex_to_rgb(cfg["color_primary"])
     white = (255, 255, 255)
-    white_75 = (255, 255, 255, 191)
-    white_35 = (255, 255, 255, 89)
+    white_muted = (255, 255, 255, 180)
 
     logo = await _load_logo_image(brand)
 
+    def _paste_watermark_logo(img, position="top-right", size=200, opacity=0.25):
+        """Paste a large semi-transparent logo watermark."""
+        if not logo:
+            return
+        wm = logo.copy()
+        ratio = size / wm.width
+        wm = wm.resize((size, int(wm.height * ratio)), Image.LANCZOS)
+        if wm.mode == "RGBA":
+            r, g, b, a = wm.split()
+            a = a.point(lambda p: int(p * opacity))
+            wm = Image.merge("RGBA", (r, g, b, a))
+        if position == "top-right":
+            img.paste(wm, (W - size - 60, 50), wm)
+        elif position == "top-center":
+            img.paste(wm, ((W - size) // 2, 50), wm)
+        elif position == "center-photo":
+            # Centered in the photo area (top 55%)
+            photo_h = int(H * 0.55)
+            img.paste(wm, ((W - size) // 2, (photo_h - int(wm.height * ratio)) // 2), wm)
+        elif position == "bottom-right":
+            img.paste(wm, (W - size - 80, H - int(wm.height * ratio) - 80), wm)
+
+    def _draw_swipe_arrow(draw_ctx, cx, cy, size=52):
+        """Draw the circled arrow swipe indicator."""
+        draw_ctx.ellipse([cx - size // 2, cy - size // 2, cx + size // 2, cy + size // 2], outline=white, width=2)
+        arrow_font = FONT_HEADLINE(22)
+        draw_ctx.text((cx - 7, cy - 13), "→", font=arrow_font, fill=white)
+
+    # ── COVER SLIDE (index 0): Photo top + text on black bottom ──
     if slide_index == 0:
-        # ── COVER SLIDE: sharp photo + dark gradient + headline ──
-        photo_bytes = await _fetch_photo_for_slide("cover", topic + "_slide1", brand)
-        if photo_bytes:
-            bg = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
-            bg = bg.resize((W, H), Image.LANCZOS)
-        else:
-            bg = Image.new("RGBA", (W, H), (*primary, 255))
-
-        # Gradient: darken top for logo visibility + bottom for text
-        if brand == "listr":
-            bg = _apply_gradient_overlay(bg, opacity_top=0.45, opacity_bottom=0.60)
-        else:
-            bg = _apply_gradient_overlay(bg, opacity_top=0.0, opacity_bottom=0.60)
-
-        # Watermark logo centre
-        draw = ImageDraw.Draw(bg)
-
-        # Logo top centre only (no watermark)
-        if logo:
-            logo_small = logo.copy()
-            lw = 300 if brand == "listr" else 120
-            lr = lw / logo_small.width
-            lh = int(logo_small.height * lr)
-            logo_small = logo_small.resize((lw, lh), Image.LANCZOS)
-            if logo_small.mode == "RGBA" and brand != "listr":
-                r, g, b, a = logo_small.split()
-                a = a.point(lambda p: int(p * 0.6))
-                logo_small = Image.merge("RGBA", (r, g, b, a))
-            bg.paste(logo_small, ((W - lw) // 2, 50), logo_small)
-
-        # Headline — massive bold white uppercase
-        headline = slide.get("headline", "").upper()
-        subtext = slide.get("subtext", "")
-        font_h = FONT_HEADLINE(68)
-        font_sub = FONT_BODY(26)
-
-        # Draw headline from bottom — calculate all heights first to avoid overlap
-        padding_x = 70
-        max_w = W - padding_x * 2
-        dummy_draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-        h_height = _draw_text_wrapped(dummy_draw, headline, font_h, max_w, 0, 0, white)
-        sub_height = 0
-        if subtext:
-            sub_height = _draw_text_wrapped(dummy_draw, subtext, font_sub, max_w, 0, 0, white_75)
-
-        # Stack from bottom: arrow(52) + gap(40) + subtext + gap(30) + headline
-        arrow_bottom = H - 90
-        text_y = arrow_bottom - 52 - 40
-        if subtext:
-            text_y -= sub_height
-            sub_y = text_y
-            text_y -= 30  # gap between headline and subtext
-        text_y -= h_height
-        headline_y = text_y
-
-        _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, headline_y, white, align="center")
-        if subtext:
-            _draw_text_wrapped(draw, subtext, font_sub, max_w, padding_x, sub_y, (*white[:3], 191), align="center")
-
-        # Swipe arrow
-        arrow_y = H - 90 - 52
-        draw.ellipse([padding_x, arrow_y, padding_x + 52, arrow_y + 52], outline=accent, width=2)
-        arrow_font = FONT_HEADLINE(24)
-        draw.text((padding_x + 16, arrow_y + 10), "→", font=arrow_font, fill=accent)
-
-        buf = io.BytesIO()
-        bg.save(buf, format="PNG", quality=95)
-        return buf.getvalue()
-
-    elif slide_index == 1:
-        # ── DATA SLIDE: dark photo bg + 3 stats — MULTIPLE LAYOUTS ──
-        stats = slide.get("stats", ["—", "—", "—"])
-        while len(stats) < 3:
-            stats.append("—")
-
-        def split_stat(s):
-            parts = s.split(":", 1)
-            return (parts[1].strip(), parts[0].strip()) if len(parts) == 2 else (s, "")
-
-        photo_bytes = await _fetch_photo_for_slide("data", topic + "_slide2", brand)
-        if photo_bytes:
-            bg = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
-            bg = bg.resize((W, H), Image.LANCZOS)
-        else:
-            bg = Image.new("RGBA", (W, H), (*primary, 255))
-
-        bg = _apply_gradient_overlay(bg, opacity_top=0.55, opacity_bottom=0.55)
-
-        draw = ImageDraw.Draw(bg)
-        if logo:
-            logo_small = logo.copy()
-            lw = 300 if brand == "listr" else 120
-            lr = lw / logo_small.width
-            lh = int(logo_small.height * lr)
-            logo_small = logo_small.resize((lw, lh), Image.LANCZOS)
-            if logo_small.mode == "RGBA" and brand != "listr":
-                r, g, b, a = logo_small.split()
-                a = a.point(lambda p: int(p * 0.6))
-                logo_small = Image.merge("RGBA", (r, g, b, a))
-            bg.paste(logo_small, ((W - lw) // 2, 50), logo_small)
-
-        layout = random.choice(["stacked", "hero", "cards"])
-
-        if layout == "stacked":
-            # LAYOUT A: Classic vertical stack with accent dividers
-            font_val = FONT_HEADLINE(64)
-            font_lbl = FONT_BODY(18)
-            divider_color = _hex_to_rgba(cfg["color_accent"], 64)
-            max_val_w = W - 200
-
-            elements = []
-            for i, s in enumerate(stats):
-                val, lbl = split_stat(s)
-                cur_font = font_val
-                val_bbox = cur_font.getbbox(val)
-                val_w = val_bbox[2] - val_bbox[0]
-                if val_w > max_val_w:
-                    shrink_size = int(64 * max_val_w / val_w)
-                    cur_font = FONT_HEADLINE(shrink_size)
-                    val_bbox = cur_font.getbbox(val)
-                val_h = val_bbox[3] - val_bbox[1]
-                elements.append(("val", val_h, {"text": val, "font": cur_font, "fill": accent}))
-                if lbl:
-                    lbl_upper = lbl.upper()
-                    lbl_bbox = font_lbl.getbbox(lbl_upper)
-                    lbl_h = lbl_bbox[3] - lbl_bbox[1]
-                    elements.append(("gap", 20, None))
-                    elements.append(("lbl", lbl_h, {"text": lbl_upper, "font": font_lbl, "fill": white}))
-                if i < 2:
-                    elements.append(("gap", 45, None))
-                    elements.append(("div", 1, None))
-                    elements.append(("gap", 45, None))
-
-            total_h = sum(e[1] for e in elements)
-            start_y = (H - total_h) // 2 + 60
-
-            for etype, eheight, edata in elements:
-                if etype == "val":
-                    tw = edata["font"].getbbox(edata["text"])[2] - edata["font"].getbbox(edata["text"])[0]
-                    draw.text(((W - tw) // 2, start_y), edata["text"], font=edata["font"], fill=edata["fill"])
-                elif etype == "lbl":
-                    tw = edata["font"].getbbox(edata["text"])[2] - edata["font"].getbbox(edata["text"])[0]
-                    draw.text(((W - tw) // 2, start_y), edata["text"], font=edata["font"], fill=edata["fill"])
-                elif etype == "div":
-                    draw.line([(W // 2 - 50, start_y), (W // 2 + 50, start_y)], fill=_hex_to_rgba(cfg["color_accent"], 64), width=1)
-                start_y += eheight
-
-        elif layout == "hero":
-            # LAYOUT B: One large hero stat top, two smaller stats side by side below
-            val0, lbl0 = split_stat(stats[0])
-            val1, lbl1 = split_stat(stats[1])
-            val2, lbl2 = split_stat(stats[2])
-
-            # Hero stat — big and centered
-            hero_font = FONT_HEADLINE(96)
-            hero_bbox = hero_font.getbbox(val0)
-            hero_w = hero_bbox[2] - hero_bbox[0]
-            max_hero_w = W - 160
-            if hero_w > max_hero_w:
-                hero_font = FONT_HEADLINE(int(96 * max_hero_w / hero_w))
-                hero_bbox = hero_font.getbbox(val0)
-                hero_w = hero_bbox[2] - hero_bbox[0]
-            hero_h = hero_bbox[3] - hero_bbox[1]
-
-            hero_y = 350
-            draw.text(((W - hero_w) // 2, hero_y), val0, font=hero_font, fill=accent)
-            if lbl0:
-                lbl_font = FONT_BODY(22)
-                lbl_upper = lbl0.upper()
-                lbl_bbox = lbl_font.getbbox(lbl_upper)
-                lbl_w = lbl_bbox[2] - lbl_bbox[0]
-                draw.text(((W - lbl_w) // 2, hero_y + hero_h + 20), lbl_upper, font=lbl_font, fill=white)
-
-            # Accent line
-            line_y = hero_y + hero_h + 80
-            draw.line([(W // 2 - 120, line_y), (W // 2 + 120, line_y)], fill=accent_rgba, width=2)
-
-            # Two smaller stats side by side
-            small_font = FONT_HEADLINE(48)
-            small_lbl_font = FONT_BODY(16)
-            col_x = [W // 4, 3 * W // 4]
-            row_y = line_y + 60
-
-            for i, (val, lbl) in enumerate([(val1, lbl1), (val2, lbl2)]):
-                cur_font = small_font
-                vb = cur_font.getbbox(val)
-                vw = vb[2] - vb[0]
-                max_col_w = W // 2 - 80
-                if vw > max_col_w:
-                    cur_font = FONT_HEADLINE(int(48 * max_col_w / vw))
-                    vb = cur_font.getbbox(val)
-                    vw = vb[2] - vb[0]
-                vh = vb[3] - vb[1]
-                draw.text((col_x[i] - vw // 2, row_y), val, font=cur_font, fill=accent)
-                if lbl:
-                    lb = small_lbl_font.getbbox(lbl.upper())
-                    lw2 = lb[2] - lb[0]
-                    draw.text((col_x[i] - lw2 // 2, row_y + vh + 15), lbl.upper(), font=small_lbl_font, fill=white)
-
-        elif layout == "cards":
-            # LAYOUT C: Stats in semi-transparent rounded card rows
-            card_margin = 60
-            card_w = W - card_margin * 2
-            card_h = 160
-            card_gap = 30
-            total_cards_h = 3 * card_h + 2 * card_gap
-            start_y = (H - total_cards_h) // 2 + 60
-
-            val_font = FONT_HEADLINE(52)
-            lbl_font = FONT_BODY(18)
-            card_bg_color = (0, 0, 0, 140)
-
-            for i, s in enumerate(stats):
-                val, lbl = split_stat(s)
-                cy = start_y + i * (card_h + card_gap)
-
-                # Draw semi-transparent card background
-                card_overlay = Image.new("RGBA", (card_w, card_h), card_bg_color)
-                bg.paste(Image.alpha_composite(
-                    bg.crop((card_margin, cy, card_margin + card_w, cy + card_h)),
-                    card_overlay
-                ), (card_margin, cy))
-
-                # Accent left border
-                draw = ImageDraw.Draw(bg)
-                draw.rectangle([(card_margin, cy), (card_margin + 4, cy + card_h)], fill=accent_rgba)
-
-                # Value text — left aligned inside card
-                cur_font = val_font
-                vb = cur_font.getbbox(val)
-                vw = vb[2] - vb[0]
-                max_cw = card_w - 60
-                if vw > max_cw:
-                    cur_font = FONT_HEADLINE(int(52 * max_cw / vw))
-                    vb = cur_font.getbbox(val)
-                vh = vb[3] - vb[1]
-
-                text_x = card_margin + 30
-                if lbl:
-                    # Value top, label below
-                    draw.text((text_x, cy + (card_h - vh - 30) // 2), val, font=cur_font, fill=accent)
-                    lb = lbl_font.getbbox(lbl.upper())
-                    draw.text((text_x, cy + (card_h - vh - 30) // 2 + vh + 10), lbl.upper(), font=lbl_font, fill=white)
-                else:
-                    draw.text((text_x, cy + (card_h - vh) // 2), val, font=cur_font, fill=accent)
-
-        buf = io.BytesIO()
-        bg.save(buf, format="PNG", quality=95)
-        return buf.getvalue()
-
-    else:
-        # ── CTA SLIDE: dark bg + headline + CTA + logo ──
-        headline = slide.get("headline", "").upper()
-        cta_line = slide.get("cta_line", cfg["cta"])
-        website = cfg["website"]
-
-        # CTA slide: always solid dark background — no photo, no background text interference
         bg = Image.new("RGBA", (W, H), (*primary, 255))
 
+        # Photo occupies top ~55%
+        photo_h = int(H * 0.55)
+        photo_bytes = await _fetch_photo_for_slide("cover", topic + "_slide1", brand)
+        if photo_bytes:
+            photo = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
+            # Crop/resize to fill top portion
+            photo_ratio = max(W / photo.width, photo_h / photo.height)
+            pw = int(photo.width * photo_ratio)
+            ph = int(photo.height * photo_ratio)
+            photo = photo.resize((pw, ph), Image.LANCZOS)
+            # Center crop
+            left = (pw - W) // 2
+            top = (ph - photo_h) // 2
+            photo = photo.crop((left, top, left + W, top + photo_h))
+            bg.paste(photo, (0, 0))
+
+            # Fade photo to black at bottom edge
+            fade = Image.new("RGBA", (W, photo_h), (0, 0, 0, 0))
+            fade_draw = ImageDraw.Draw(fade)
+            fade_start = int(photo_h * 0.6)
+            for y in range(fade_start, photo_h):
+                progress = (y - fade_start) / (photo_h - fade_start)
+                alpha = int(progress * 255)
+                fade_draw.line([(0, y), (W, y)], fill=(primary[0], primary[1], primary[2], alpha))
+            bg = Image.alpha_composite(bg, fade)
+
+        # Large watermark logo on the photo
+        _paste_watermark_logo(bg, "center-photo", size=250, opacity=0.30)
+
         draw = ImageDraw.Draw(bg)
 
-        font_h = FONT_HEADLINE(58)
-        font_cta = FONT_BODY(30)
-        font_web = FONT_BODY(18)
+        # Text area starts below photo
+        text_top = photo_h + 20
+        padding_x = 70
+        max_w = W - padding_x * 2
+
+        # Headline — bold white uppercase
+        headline = slide.get("headline", "").upper()
+        font_h = FONT_HEADLINE(62)
+        h_height = _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_top, white, align="center")
+
+        # Subtext — accent color, italic feel
+        subtext = slide.get("subtext", "")
+        if subtext:
+            font_sub = FONT_BODY(28)
+            sub_y = text_top + h_height + 25
+            _draw_text_wrapped(draw, subtext.upper(), font_sub, max_w, padding_x, sub_y, accent, align="center")
+
+        # Swipe arrow at bottom center
+        _draw_swipe_arrow(draw, W // 2, H - 70)
+
+        buf = io.BytesIO()
+        bg.save(buf, format="PNG", quality=95)
+        return buf.getvalue()
+
+    # ── CTA SLIDE (last slide): Clean black + accent CTA + large logo ──
+    elif is_last:
+        bg = Image.new("RGBA", (W, H), (*primary, 255))
+        draw = ImageDraw.Draw(bg)
+
+        headline = slide.get("headline", slide.get("cta_line", cfg["cta"])).upper()
+        subtext = slide.get("subtext", "")
+
+        font_h = FONT_HEADLINE(52)
+        font_sub = FONT_BODY(32)
         padding_x = 80
         max_w = W - padding_x * 2
 
-        # Calculate layout for centering
-        h_height = _draw_text_wrapped(ImageDraw.Draw(Image.new("RGBA", (1, 1))), headline, font_h, max_w, 0, 0, white)
-        cta_bbox = font_cta.getbbox(cta_line)
-        cta_h = cta_bbox[3] - cta_bbox[1]
-        logo_block_h = 100  # logo + website
-        total_h = h_height + 36 + cta_h + 70 + logo_block_h
+        # Calculate total block height for vertical centering
+        dummy = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        h_height = _draw_text_wrapped(dummy, headline, font_h, max_w, 0, 0, white)
+        sub_height = _draw_text_wrapped(dummy, subtext.upper(), font_sub, max_w, 0, 0, accent) if subtext else 0
+        logo_h = 200  # logo block
+        total_h = h_height + (30 + sub_height if subtext else 0) + 80 + logo_h
         start_y = (H - total_h) // 2
 
-        # Headline
-        _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, start_y, white, align="center")
-        start_y += h_height + 36
+        # Accent headline or white headline depending on content
+        _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, start_y, accent, align="center")
+        start_y += h_height
 
-        # CTA line
-        cta_w = cta_bbox[2] - cta_bbox[0]
-        draw.text(((W - cta_w) // 2, start_y), cta_line, font=font_cta, fill=accent)
-        start_y += cta_h + 70
+        if subtext:
+            start_y += 30
+            _draw_text_wrapped(draw, subtext.upper(), font_sub, max_w, padding_x, start_y, white, align="center")
+            start_y += sub_height
 
-        # Logo
+        start_y += 80
+
+        # Large logo centered
         if logo:
             logo_big = logo.copy()
-            lw = 350 if brand == "listr" else 180
+            lw = 350 if brand == "listr" else 220
             lr = lw / logo_big.width
             lh = int(logo_big.height * lr)
             logo_big = logo_big.resize((lw, lh), Image.LANCZOS)
             bg.paste(logo_big, ((W - lw) // 2, start_y), logo_big)
             start_y += lh + 20
-        else:
-            brand_name = "LISTR.AE" if cfg["name"] == "ListR.ae" else "NUCASSA"
-            brand_font = FONT_HEADLINE(18)
-            bn_bbox = brand_font.getbbox(brand_name)
-            bn_w = bn_bbox[2] - bn_bbox[0]
-            draw.text(((W - bn_w) // 2, start_y), brand_name, font=brand_font, fill=accent)
-            start_y += 40
 
-        # Website
-        web_bbox = font_web.getbbox(website)
-        web_w = web_bbox[2] - web_bbox[0]
-        draw.text(((W - web_w) // 2, start_y), website, font=font_web, fill=white_35)
+        # Brand name text below logo
+        brand_name = cfg["name"].upper().replace(".AE", "").replace(" LTD", "")
+        if "listr" in brand:
+            brand_name = "LISTR"
+        elif "holdings" in brand:
+            brand_name = "NUCASSA"
+        else:
+            brand_name = "NUCASSA"
+        bn_font = FONT_HEADLINE(28)
+        bn_bbox = bn_font.getbbox(brand_name)
+        bn_w = bn_bbox[2] - bn_bbox[0]
+        draw.text(((W - bn_w) // 2, start_y), brand_name, font=bn_font, fill=accent)
+
+        buf = io.BytesIO()
+        bg.save(buf, format="PNG", quality=95)
+        return buf.getvalue()
+
+    # ── CONTENT SLIDES (middle slides): Two layout types ──
+    else:
+        bg = Image.new("RGBA", (W, H), (*primary, 255))
+        draw = ImageDraw.Draw(bg)
+
+        headline = slide.get("headline", "").upper()
+        # Get bullet points from stats or points field
+        points = slide.get("stats", slide.get("points", []))
+        subtext = slide.get("subtext", "")
+        emphasis = slide.get("emphasis", "")
+
+        padding_x = 70
+        max_w = W - padding_x * 2
+
+        # Decide layout: photo-top or full-dark based on slide having a photo direction
+        use_photo_top = slide.get("photo_direction") and slide_index == 1
+        photo_split = int(H * 0.40) if use_photo_top else 0
+
+        if use_photo_top:
+            photo_bytes = await _fetch_photo_for_slide("cover", topic + f"_slide{slide_index+1}", brand)
+            if photo_bytes:
+                photo = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
+                photo_ratio = max(W / photo.width, photo_split / photo.height)
+                pw = int(photo.width * photo_ratio)
+                ph = int(photo.height * photo_ratio)
+                photo = photo.resize((pw, ph), Image.LANCZOS)
+                left = (pw - W) // 2
+                top_crop = (ph - photo_split) // 2
+                photo = photo.crop((left, top_crop, left + W, top_crop + photo_split))
+                bg.paste(photo, (0, 0))
+                # Fade to black
+                fade = Image.new("RGBA", (W, photo_split), (0, 0, 0, 0))
+                fd = ImageDraw.Draw(fade)
+                fade_start = int(photo_split * 0.5)
+                for y in range(fade_start, photo_split):
+                    progress = (y - fade_start) / (photo_split - fade_start)
+                    fd.line([(0, y), (W, y)], fill=(primary[0], primary[1], primary[2], int(progress * 255)))
+                bg = Image.alpha_composite(bg, fade)
+                draw = ImageDraw.Draw(bg)
+            else:
+                photo_split = 0
+
+        # Logo watermark — top right, large, semi-transparent
+        _paste_watermark_logo(bg, "top-right", size=180, opacity=0.20)
+
+        # Text starts below photo (or from top with padding)
+        text_y = photo_split + 60 if photo_split else 180
+
+        # Headline — bold white
+        if headline:
+            font_h = FONT_HEADLINE(52)
+            h_height = _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_y, white)
+            text_y += h_height + 20
+
+        # Emphasis line — accent color, slightly smaller
+        if emphasis:
+            font_em = FONT_HEADLINE(40)
+            em_height = _draw_text_wrapped(draw, emphasis.upper(), font_em, max_w, padding_x, text_y, accent)
+            text_y += em_height + 30
+
+        # Bullet points with > chevron
+        if points:
+            font_bullet = FONT_HEADLINE(32)
+            for pt in points:
+                # Clean up stat format — remove "LABEL: " prefix if present
+                display = pt
+                if ":" in pt:
+                    parts = pt.split(":", 1)
+                    display = parts[1].strip() if len(parts[1].strip()) > len(parts[0].strip()) else pt
+                bullet_text = f"> {display.upper()}"
+                bt_height = _draw_text_wrapped(draw, bullet_text, font_bullet, max_w, padding_x, text_y, white)
+                text_y += bt_height + 20
+
+        # Subtext / closing emphasis — accent color at bottom
+        if subtext:
+            text_y += 20
+            font_close = FONT_HEADLINE(38)
+            _draw_text_wrapped(draw, subtext.upper(), font_close, max_w, padding_x, text_y, accent)
+
+        # Swipe arrow if not second-to-last
+        if slide_index < total_slides - 2:
+            _draw_swipe_arrow(draw, W // 2, H - 70)
 
         buf = io.BytesIO()
         bg.save(buf, format="PNG", quality=95)
