@@ -6,3 +6,4 @@ cryptography
 Pillow>=10.0.0
 requests
 PyMuPDF>=1.24.0
+numpy>=1.26.0

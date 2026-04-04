@@ -727,8 +727,52 @@ _drive_image_cache: list[bytes] = []  # cached property images extracted from br
 _drive_cache_time: float = 0.0
 
 
-async def _extract_images_from_pdf_bytes(pdf_bytes: bytes, min_size: int = 50000) -> list[bytes]:
-    """Extract large images from a PDF using PyMuPDF. Returns list of image bytes."""
+def _is_clean_photo(img_bytes: bytes, min_width: int = 800, min_height: int = 600) -> bool:
+    """Check if an image is a clean photograph suitable as a background.
+    Rejects: small images, floor plans, logos, text-heavy pages, icons."""
+    try:
+        img = Image.open(io.BytesIO(img_bytes))
+        w, h = img.size
+
+        # Too small — likely a logo, icon, or decorative element
+        if w < min_width or h < min_height:
+            return False
+
+        # Very narrow or very tall — likely a banner, sidebar, or floor plan strip
+        ratio = w / h if h > 0 else 0
+        if ratio > 4.0 or ratio < 0.2:
+            return False
+
+        # Check for text-heavy / white-dominated images (brochure pages with text)
+        img_rgb = img.convert("RGB")
+        import numpy as np
+        arr = np.array(img_rgb)
+
+        # Percentage of near-white pixels (R>240, G>240, B>240)
+        white_mask = (arr[:, :, 0] > 240) & (arr[:, :, 1] > 240) & (arr[:, :, 2] > 240)
+        white_pct = white_mask.sum() / (w * h)
+        if white_pct > 0.35:
+            return False  # Too much white — likely a text page or floor plan
+
+        # Percentage of near-black pixels — pure black pages with text overlays
+        black_mask = (arr[:, :, 0] < 15) & (arr[:, :, 1] < 15) & (arr[:, :, 2] < 15)
+        black_pct = black_mask.sum() / (w * h)
+        if black_pct > 0.60:
+            return False  # Too dark — likely a black page with white text
+
+        # Colour variance — real photos have high variance, graphics/plans are flat
+        std = arr.std()
+        if std < 25:
+            return False  # Very flat colours — likely a graphic, icon, or solid fill
+
+        return True
+    except Exception:
+        return False
+
+
+async def _extract_images_from_pdf_bytes(pdf_bytes: bytes, min_size: int = 80000) -> list[bytes]:
+    """Extract clean photographs from a PDF using PyMuPDF.
+    Filters out logos, floor plans, text pages, and small graphics."""
     images = []
     try:
         import fitz
@@ -738,7 +782,9 @@ async def _extract_images_from_pdf_bytes(pdf_bytes: bytes, min_size: int = 50000
                 xref = img_info[0]
                 try:
                     base_image = doc.extract_image(xref)
-                    if base_image and len(base_image["image"]) >= min_size:
+                    if not base_image or len(base_image["image"]) < min_size:
+                        continue
+                    if _is_clean_photo(base_image["image"]):
                         images.append(base_image["image"])
                 except Exception:
                     continue
