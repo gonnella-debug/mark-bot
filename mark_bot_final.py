@@ -1100,8 +1100,8 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
 
     logo = await _load_logo_image(brand)
 
-    def _paste_watermark_logo(img, position="top-right", size=200, opacity=0.25):
-        """Paste a large semi-transparent logo watermark."""
+    def _paste_logo_top_left(img, size=80, opacity=0.50):
+        """Small logo, top-left corner, consistent on every non-CTA slide."""
         if not logo:
             return
         wm = logo.copy()
@@ -1111,16 +1111,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
             r, g, b, a = wm.split()
             a = a.point(lambda p: int(p * opacity))
             wm = Image.merge("RGBA", (r, g, b, a))
-        if position == "top-right":
-            img.paste(wm, (W - size - 60, 50), wm)
-        elif position == "top-center":
-            img.paste(wm, ((W - size) // 2, 50), wm)
-        elif position == "center-photo":
-            # Centered in the photo area (top 55%)
-            photo_h = int(H * 0.55)
-            img.paste(wm, ((W - size) // 2, (photo_h - int(wm.height * ratio)) // 2), wm)
-        elif position == "bottom-right":
-            img.paste(wm, (W - size - 80, H - int(wm.height * ratio) - 80), wm)
+        img.paste(wm, (50, 50), wm)
 
     def _draw_swipe_arrow(draw_ctx, cx, cy, size=52):
         """Draw the circled arrow swipe indicator."""
@@ -1128,110 +1119,100 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         arrow_font = FONT_HEADLINE(22)
         draw_ctx.text((cx - 7, cy - 13), "→", font=arrow_font, fill=white)
 
-    # Helper: place photo in top portion with fade to black
-    def _place_photo_top(bg_img, photo_bytes, photo_height, grayscale=False):
+    # Helper: full-bleed photo with gradient overlay
+    def _full_bleed_photo(bg_img, photo_bytes, grayscale=False):
+        """Place photo covering entire slide, apply dark gradient over whole image."""
         if not photo_bytes:
             return bg_img
         photo = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
-        pr = max(W / photo.width, photo_height / photo.height)
-        pw, ph = int(photo.width * pr), int(photo.height * pr)
-        photo = photo.resize((pw, ph), Image.LANCZOS)
-        left = (pw - W) // 2
-        top_c = (ph - photo_height) // 2
-        photo = photo.crop((left, top_c, left + W, top_c + photo_height))
+        pr = max(W / photo.width, H / photo.height)
+        photo = photo.resize((int(photo.width * pr), int(photo.height * pr)), Image.LANCZOS)
+        left = (photo.width - W) // 2
+        top_c = (photo.height - H) // 2
+        photo = photo.crop((left, top_c, left + W, top_c + H))
         if grayscale:
             photo = photo.convert("L").convert("RGBA")
         bg_img.paste(photo, (0, 0))
-        # Fade to black
-        fade = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        fd = ImageDraw.Draw(fade)
-        fs = int(photo_height * 0.6)
-        for y in range(fs, photo_height):
-            prog = (y - fs) / (photo_height - fs)
-            fd.line([(0, y), (W, y)], fill=(primary[0], primary[1], primary[2], int(prog * 255)))
-        return Image.alpha_composite(bg_img, fade)
+        # Gradient: light at top, dark at bottom — text sits on the dark bottom
+        return _apply_gradient_overlay(bg_img, opacity_top=0.10, opacity_bottom=0.85)
 
-    # ── COVER SLIDE (index 0): 3 random layout variations ──
-    if slide_index == 0:
-        cover_layout = random.choice(["photo_top", "full_bleed", "bw_cinematic"])
+    # ── SLIDE 1 & 2: Full-bleed photo + gradient + text over bottom ──
+    if not is_last:
         bg = Image.new("RGBA", (W, H), (*primary, 255))
-        photo_bytes = await _fetch_photo_for_slide("cover", topic + "_slide1", brand)
+        photo_bytes = await _fetch_photo_for_slide("cover", topic + f"_slide{slide_index+1}", brand)
+
+        # Randomly apply B&W to some slides for variety
+        grayscale = random.choice([False, False, True]) if slide_index == 0 else random.choice([False, False, False, True])
+        bg = _full_bleed_photo(bg, photo_bytes, grayscale=grayscale)
+
+        # Small logo top-left, same spot every time
+        _paste_logo_top_left(bg)
+
+        draw = ImageDraw.Draw(bg)
 
         headline = slide.get("headline", "").upper()
         subtext = slide.get("subtext", "")
+        emphasis = slide.get("emphasis", "")
+        points = slide.get("stats", slide.get("points", []))
         padding_x = 70
         max_w = W - padding_x * 2
+        dummy = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
 
-        if cover_layout == "photo_top":
-            # Layout A: Photo top 55%, fade to black, text on black
-            photo_h = int(H * 0.55)
-            bg = _place_photo_top(bg, photo_bytes, photo_h)
-            _paste_watermark_logo(bg, "center-photo", size=250, opacity=0.30)
-            draw = ImageDraw.Draw(bg)
-            text_top = photo_h + 20
-            font_h = FONT_HEADLINE(62)
-            h_height = _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_top, white, align="center")
-            if subtext:
-                font_sub = FONT_BODY(28)
-                _draw_text_wrapped(draw, subtext.upper(), font_sub, max_w, padding_x, text_top + h_height + 25, accent, align="center")
+        # Calculate text block height to position from bottom
+        font_h = FONT_HEADLINE(62) if slide_index == 0 else FONT_HEADLINE(48)
+        font_sub = FONT_BODY(28)
+        font_accent = FONT_HEADLINE(38)
+        font_bullet = FONT_HEADLINE(30)
 
-        elif cover_layout == "full_bleed":
-            # Layout B: Full photo with heavy bottom gradient, text over dark bottom
-            if photo_bytes:
-                photo = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
-                pr = max(W / photo.width, H / photo.height)
-                photo = photo.resize((int(photo.width * pr), int(photo.height * pr)), Image.LANCZOS)
-                left = (photo.width - W) // 2
-                top_c = (photo.height - H) // 2
-                photo = photo.crop((left, top_c, left + W, top_c + H))
-                bg.paste(photo, (0, 0))
-            bg = _apply_gradient_overlay(bg, opacity_top=0.05, opacity_bottom=0.85)
-            _paste_watermark_logo(bg, "top-center", size=220, opacity=0.35)
-            draw = ImageDraw.Draw(bg)
-            font_h = FONT_HEADLINE(68)
-            # Stack text from bottom up
-            dummy = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-            h_height = _draw_text_wrapped(dummy, headline, font_h, max_w, 0, 0, white)
-            sub_height = 0
-            if subtext:
-                font_sub = FONT_BODY(26)
-                sub_height = _draw_text_wrapped(dummy, subtext.upper(), font_sub, max_w, 0, 0, accent)
-            bottom_y = H - 130
-            if subtext:
-                bottom_y -= sub_height
-                _draw_text_wrapped(draw, subtext.upper(), FONT_BODY(26), max_w, padding_x, bottom_y, accent, align="center")
-                bottom_y -= 30
-            bottom_y -= h_height
-            _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, bottom_y, white, align="center")
+        block_height = 0
+        if headline:
+            block_height += _draw_text_wrapped(dummy, headline, font_h, max_w, 0, 0, white) + 25
+        if subtext:
+            block_height += _draw_text_wrapped(dummy, subtext.upper(), font_sub, max_w, 0, 0, accent) + 25
+        if emphasis:
+            block_height += _draw_text_wrapped(dummy, emphasis.upper(), font_accent, max_w, 0, 0, accent) + 30
+        if points:
+            for pt in points:
+                display = pt.split(":", 1)[1].strip() if ":" in pt and len(pt.split(":", 1)[1].strip()) > len(pt.split(":", 1)[0].strip()) else pt
+                block_height += _draw_text_wrapped(dummy, f"> {display.upper()}", font_bullet, max_w, 0, 0, white) + 22
 
-        elif cover_layout == "bw_cinematic":
-            # Layout C: B&W photo top 50%, text on black — moody, cinematic
-            photo_h = int(H * 0.50)
-            bg = _place_photo_top(bg, photo_bytes, photo_h, grayscale=True)
-            _paste_watermark_logo(bg, "top-center", size=200, opacity=0.25)
-            draw = ImageDraw.Draw(bg)
-            # Smaller header text, centered below photo
-            text_top = photo_h + 40
-            font_label = FONT_BODY(24)
-            font_h = FONT_HEADLINE(58)
-            # Optional small label above headline
-            if subtext:
-                _draw_text_wrapped(draw, subtext.upper(), font_label, max_w, padding_x, text_top, white_muted, align="center")
-                text_top += 50
-            _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_top, white, align="center")
-            # Accent emphasis below headline
-            h_height = _draw_text_wrapped(ImageDraw.Draw(Image.new("RGBA", (1, 1))), headline, font_h, max_w, 0, 0, white)
-            accent_line = slide.get("emphasis", "")
-            if accent_line:
-                font_acc = FONT_HEADLINE(36)
-                _draw_text_wrapped(draw, accent_line.upper(), font_acc, max_w, padding_x, text_top + h_height + 20, accent, align="center")
+        # Position text block so it ends ~130px from bottom (room for swipe arrow)
+        text_y = H - 130 - block_height
+        text_y = max(text_y, int(H * 0.45))  # Never higher than 45% — keep photo visible
 
-        _draw_swipe_arrow(ImageDraw.Draw(bg), W // 2, H - 70)
+        # Draw text elements
+        if headline:
+            h_height = _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_y, white, align="center")
+            text_y += h_height + 25
+
+        if subtext and not points:
+            # Subtext as accent line below headline (cover style)
+            _draw_text_wrapped(draw, subtext.upper(), font_sub, max_w, padding_x, text_y, accent, align="center")
+            text_y += _draw_text_wrapped(dummy, subtext.upper(), font_sub, max_w, 0, 0, accent) + 25
+
+        if emphasis:
+            _draw_text_wrapped(draw, emphasis.upper(), font_accent, max_w, padding_x, text_y, accent)
+            text_y += _draw_text_wrapped(dummy, emphasis.upper(), font_accent, max_w, 0, 0, accent) + 30
+
+        if points:
+            for pt in points:
+                display = pt.split(":", 1)[1].strip() if ":" in pt and len(pt.split(":", 1)[1].strip()) > len(pt.split(":", 1)[0].strip()) else pt
+                bt_height = _draw_text_wrapped(draw, f"> {display.upper()}", font_bullet, max_w, padding_x, text_y, white)
+                text_y += bt_height + 22
+
+        if subtext and points:
+            # Closing emphasis after bullets
+            text_y += 10
+            _draw_text_wrapped(draw, subtext.upper(), font_accent, max_w, padding_x, text_y, accent)
+
+        # Swipe arrow
+        _draw_swipe_arrow(draw, W // 2, H - 60)
+
         buf = io.BytesIO()
         bg.save(buf, format="PNG", quality=95)
         return buf.getvalue()
 
-    # ── CTA SLIDE (last slide): 2 random variations ──
+    # ── CTA SLIDE (last slide): Don't touch — it's fine ──
     elif is_last:
         cta_layout = random.choice(["logo_centered", "minimal"])
         bg = Image.new("RGBA", (W, H), (*primary, 255))
@@ -1289,114 +1270,7 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         bg.save(buf, format="PNG", quality=95)
         return buf.getvalue()
 
-    # ── CONTENT SLIDES (middle slides): 3 random layout variations ──
-    else:
-        content_layout = random.choice(["bullets_left", "photo_top_text", "centered_checks"])
-        bg = Image.new("RGBA", (W, H), (*primary, 255))
-
-        headline = slide.get("headline", "").upper()
-        points = slide.get("stats", slide.get("points", []))
-        subtext = slide.get("subtext", "")
-        emphasis = slide.get("emphasis", "")
-        padding_x = 70
-        max_w = W - padding_x * 2
-
-        if content_layout == "bullets_left":
-            # Layout A: Solid black, left-aligned headline + > bullets + accent emphasis
-            _paste_watermark_logo(bg, "top-right", size=180, opacity=0.20)
-            draw = ImageDraw.Draw(bg)
-            text_y = 180
-            if headline:
-                font_h = FONT_HEADLINE(52)
-                h_height = _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_y, white)
-                text_y += h_height + 25
-            if emphasis:
-                font_em = FONT_HEADLINE(38)
-                em_height = _draw_text_wrapped(draw, emphasis.upper(), font_em, max_w, padding_x, text_y, accent)
-                text_y += em_height + 35
-            if points:
-                font_bullet = FONT_HEADLINE(30)
-                for pt in points:
-                    display = pt.split(":", 1)[1].strip() if ":" in pt and len(pt.split(":", 1)[1].strip()) > len(pt.split(":", 1)[0].strip()) else pt
-                    bt_height = _draw_text_wrapped(draw, f"> {display.upper()}", font_bullet, max_w, padding_x, text_y, white)
-                    text_y += bt_height + 22
-            if subtext:
-                text_y += 25
-                font_close = FONT_HEADLINE(36)
-                _draw_text_wrapped(draw, subtext.upper(), font_close, max_w, padding_x, text_y, accent)
-
-        elif content_layout == "photo_top_text":
-            # Layout B: Photo top 40% + text on black bottom — like the silhouette slide
-            photo_split = int(H * 0.40)
-            photo_bytes = await _fetch_photo_for_slide("cover", topic + f"_slide{slide_index+1}", brand)
-            bg = _place_photo_top(bg, photo_bytes, photo_split)
-            draw = ImageDraw.Draw(bg)
-            _paste_watermark_logo(bg, "bottom-right", size=200, opacity=0.18)
-            draw = ImageDraw.Draw(bg)
-            text_y = photo_split + 30
-            if headline:
-                font_h = FONT_HEADLINE(48)
-                h_height = _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_y, white)
-                text_y += h_height + 20
-            if emphasis:
-                font_em = FONT_HEADLINE(34)
-                _draw_text_wrapped(draw, emphasis.upper(), font_em, max_w, padding_x, text_y, accent)
-                text_y += 55
-            if points:
-                font_bullet = FONT_HEADLINE(28)
-                for pt in points:
-                    display = pt.split(":", 1)[1].strip() if ":" in pt and len(pt.split(":", 1)[1].strip()) > len(pt.split(":", 1)[0].strip()) else pt
-                    bt_height = _draw_text_wrapped(draw, f"> {display.upper()}", font_bullet, max_w, padding_x, text_y, white)
-                    text_y += bt_height + 18
-            if subtext:
-                text_y += 20
-                font_close = FONT_HEADLINE(34)
-                _draw_text_wrapped(draw, subtext.upper(), font_close, max_w, padding_x, text_y, accent)
-
-        elif content_layout == "centered_checks":
-            # Layout C: Centered text with bullet dots, accent emphasis — like the checklist slides
-            _paste_watermark_logo(bg, "top-right", size=180, opacity=0.20)
-            draw = ImageDraw.Draw(bg)
-            # Vertically center the content block
-            dummy = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-            total_est = 0
-            if headline:
-                total_est += _draw_text_wrapped(dummy, headline, FONT_HEADLINE(48), max_w, 0, 0, white) + 30
-            if points:
-                for pt in points:
-                    total_est += _draw_text_wrapped(dummy, f"• {pt.upper()}", FONT_HEADLINE(30), max_w, 0, 0, white) + 35
-            if subtext:
-                total_est += 30 + _draw_text_wrapped(dummy, subtext.upper(), FONT_HEADLINE(36), max_w, 0, 0, accent)
-            if emphasis:
-                total_est += 20 + _draw_text_wrapped(dummy, emphasis.upper(), FONT_HEADLINE(32), max_w, 0, 0, white)
-            text_y = max(120, (H - total_est) // 2)
-            if headline:
-                font_h = FONT_HEADLINE(48)
-                h_height = _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_y, white, align="center")
-                text_y += h_height + 30
-            if points:
-                font_bullet = FONT_HEADLINE(30)
-                for pt in points:
-                    display = pt.split(":", 1)[1].strip() if ":" in pt and len(pt.split(":", 1)[1].strip()) > len(pt.split(":", 1)[0].strip()) else pt
-                    bt_height = _draw_text_wrapped(draw, f"• {display.upper()}", font_bullet, max_w, padding_x, text_y, white, align="center")
-                    text_y += bt_height + 35
-            if subtext:
-                text_y += 30
-                font_close = FONT_HEADLINE(36)
-                _draw_text_wrapped(draw, subtext.upper(), font_close, max_w, padding_x, text_y, accent, align="center")
-                text_y += _draw_text_wrapped(dummy, subtext.upper(), font_close, max_w, 0, 0, accent)
-            if emphasis:
-                text_y += 20
-                font_em = FONT_HEADLINE(32)
-                _draw_text_wrapped(draw, emphasis.upper(), font_em, max_w, padding_x, text_y, white, align="center")
-
-        # Swipe arrow on non-final content slides
-        if slide_index < total_slides - 2:
-            _draw_swipe_arrow(ImageDraw.Draw(bg), W // 2, H - 70)
-
-        buf = io.BytesIO()
-        bg.save(buf, format="PNG", quality=95)
-        return buf.getvalue()
+    # No else needed — non-CTA slides handled above by `if not is_last`
 
 
 async def render_carousel_images(content: dict, brand: str) -> list[bytes]:
