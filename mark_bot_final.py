@@ -918,33 +918,67 @@ def _create_branded_background(brand: str, slide_type: str = "cover") -> bytes:
     return buf.getvalue()
 
 
-async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = "nucassa_re") -> bytes | None:
-    """Fetch a background image for a slide — brand-aware sourcing."""
+# Curated, proven high-quality images — every one manually verified to look good
+_CURATED_IMAGES = [
+    # Dubai skylines — dramatic, moody, high contrast
+    "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1200&h=1500&fit=crop&q=90",  # Dubai skyline sunset
+    "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=1200&h=1500&fit=crop&q=90",  # Dubai marina night
+    "https://images.unsplash.com/photo-1546412414-e1885e51148b?w=1200&h=1500&fit=crop&q=90",  # Burj Khalifa night
+    "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=1200&h=1500&fit=crop&q=90",  # Dubai downtown aerial
+    "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=1200&h=1500&fit=crop&q=90",  # Dubai skyline golden
+    "https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=1200&h=1500&fit=crop&q=90",  # Dubai towers sunset
+    "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=1200&h=1500&fit=crop&q=90",  # Dubai night panorama
+    "https://images.unsplash.com/photo-1514632595-4944383f2737?w=1200&h=1500&fit=crop&q=90",  # Dubai aerial
+    # Luxury real estate / interiors
+    "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&h=1500&fit=crop&q=90",  # Luxury villa pool
+    "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200&h=1500&fit=crop&q=90",  # Modern house exterior
+    "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=1200&h=1500&fit=crop&q=90",  # Luxury villa aerial
+    "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=1200&h=1500&fit=crop&q=90",  # Modern interior
+    # Business / corporate
+    "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=1500&fit=crop&q=90",  # Glass tower looking up
+    "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=1200&h=1500&fit=crop&q=90",  # Modern architecture dark
+    "https://images.unsplash.com/photo-1448630360428-65456885c650?w=1200&h=1500&fit=crop&q=90",  # City skyline dark
+    "https://images.unsplash.com/photo-1459767129954-1b1c1f9b9ace?w=1200&h=1500&fit=crop&q=90",  # Building facade
+    # Dubai specific landmarks
+    "https://images.unsplash.com/photo-1582672060674-bc2bd808a8b5?w=1200&h=1500&fit=crop&q=90",  # Dubai frame
+    "https://images.unsplash.com/photo-1545893835-abaa50cbe628?w=1200&h=1500&fit=crop&q=90",  # Dubai marina towers
+    "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=1200&h=1500&fit=crop&q=90",  # Burj Al Arab
+]
 
-    # CTA slides always get solid background
+# Track recently used images to avoid repeats
+_recent_images: list[str] = []
+
+
+async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = "nucassa_re") -> bytes | None:
+    """Fetch a background image — curated, proven images only."""
+    global _recent_images
+
     if slide_type == "cta":
         return None
 
-    # ── NUCASSA RE: Use real property images from Drive brochure PDFs ──
-    if brand == "nucassa_re":
-        photo = await _fetch_drive_property_image()
-        if photo:
-            return photo
-        # Fallback: curated Dubai shots (known good images)
-        fallbacks = BRAND_FALLBACK_PHOTOS.get("nucassa_re", {}).get(slide_type, [])
-        if fallbacks:
-            url = random.choice(fallbacks)
-            try:
-                async with httpx.AsyncClient(timeout=20) as client:
-                    r = await client.get(url)
-                    if r.status_code == 200:
-                        return r.content
-            except Exception as e:
-                log.error(f"Fallback photo error: {e}")
-        return None
+    if brand in ("nucassa_holdings", "listr"):
+        return _create_branded_background(brand, slide_type)
 
-    # ── HOLDINGS & LISTR: Clean branded backgrounds — no stock photos ──
-    return _create_branded_background(brand, slide_type)
+    # Pick a curated image, avoiding recent ones
+    available = [url for url in _CURATED_IMAGES if url not in _recent_images]
+    if not available:
+        _recent_images.clear()
+        available = _CURATED_IMAGES
+
+    url = random.choice(available)
+    _recent_images.append(url)
+    if len(_recent_images) > 10:
+        _recent_images.pop(0)
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(url)
+            if r.status_code == 200:
+                return r.content
+    except Exception as e:
+        log.error(f"Curated photo fetch error: {e}")
+
+    return None
 
 
 async def _load_logo_image(brand: str) -> Image.Image | None:
