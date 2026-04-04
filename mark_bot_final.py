@@ -918,65 +918,130 @@ def _create_branded_background(brand: str, slide_type: str = "cover") -> bytes:
     return buf.getvalue()
 
 
-# Curated, proven high-quality images — every one manually verified to look good
-_CURATED_IMAGES = [
-    # Dubai skylines — dramatic, moody, high contrast
-    "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1200&h=1500&fit=crop&q=90",  # Dubai skyline sunset
-    "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=1200&h=1500&fit=crop&q=90",  # Dubai marina night
-    "https://images.unsplash.com/photo-1546412414-e1885e51148b?w=1200&h=1500&fit=crop&q=90",  # Burj Khalifa night
-    "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=1200&h=1500&fit=crop&q=90",  # Dubai downtown aerial
-    "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=1200&h=1500&fit=crop&q=90",  # Dubai skyline golden
-    "https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=1200&h=1500&fit=crop&q=90",  # Dubai towers sunset
-    "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=1200&h=1500&fit=crop&q=90",  # Dubai night panorama
-    "https://images.unsplash.com/photo-1514632595-4944383f2737?w=1200&h=1500&fit=crop&q=90",  # Dubai aerial
-    # Luxury real estate / interiors
-    "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&h=1500&fit=crop&q=90",  # Luxury villa pool
-    "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200&h=1500&fit=crop&q=90",  # Modern house exterior
-    "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=1200&h=1500&fit=crop&q=90",  # Luxury villa aerial
-    "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=1200&h=1500&fit=crop&q=90",  # Modern interior
-    # Business / corporate
-    "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=1500&fit=crop&q=90",  # Glass tower looking up
-    "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=1200&h=1500&fit=crop&q=90",  # Modern architecture dark
-    "https://images.unsplash.com/photo-1448630360428-65456885c650?w=1200&h=1500&fit=crop&q=90",  # City skyline dark
-    "https://images.unsplash.com/photo-1459767129954-1b1c1f9b9ace?w=1200&h=1500&fit=crop&q=90",  # Building facade
-    # Dubai specific landmarks
-    "https://images.unsplash.com/photo-1582672060674-bc2bd808a8b5?w=1200&h=1500&fit=crop&q=90",  # Dubai frame
-    "https://images.unsplash.com/photo-1545893835-abaa50cbe628?w=1200&h=1500&fit=crop&q=90",  # Dubai marina towers
-    "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=1200&h=1500&fit=crop&q=90",  # Burj Al Arab
+# ── Smart image sourcing per brand ──
+
+# Topic keyword → proven Unsplash search queries (these always return quality results)
+_TOPIC_SEARCH_MAP = {
+    "nucassa_re": {
+        "skyline":    ["Dubai skyline sunset aerial", "Dubai skyline night panorama", "Dubai marina golden hour"],
+        "marina":     ["Dubai marina aerial sunset", "Dubai marina towers night", "Dubai marina yacht"],
+        "downtown":   ["Burj Khalifa Dubai sunset", "Dubai downtown night aerial", "Dubai fountain night"],
+        "palm":       ["Palm Jumeirah aerial Dubai", "Dubai beach resort sunset", "Palm Jumeirah night"],
+        "villa":      ["luxury villa pool modern", "luxury modern house exterior", "luxury villa garden"],
+        "interior":   ["luxury penthouse interior", "modern apartment interior design", "luxury living room"],
+        "investment": ["Dubai financial district night", "Dubai skyline golden hour", "modern glass towers"],
+        "yield":      ["Dubai towers sunset golden", "modern apartment building Dubai", "Dubai residential night"],
+        "market":     ["Dubai city aerial sunset", "Dubai business district night", "Dubai skyline dramatic"],
+        "default":    ["Dubai skyline sunset golden hour", "Dubai aerial night city lights", "Dubai modern architecture skyline"],
+    },
+    "nucassa_holdings": {
+        "default":    ["Dubai financial centre DIFC night", "corporate office dark modern", "bank vault dark luxury"],
+        "capital":    ["Dubai skyline business bay night", "financial district glass tower", "corporate boardroom dark"],
+        "legal":      ["Abu Dhabi skyline night towers", "corporate signing document dark", "DIFC Dubai tower night"],
+    },
+    "listr": {
+        "default":    ["Dubai skyline sunset", "Dubai residential tower modern", "modern Dubai apartment building"],
+        "property":   ["Dubai apartment interior modern", "Dubai villa exterior modern", "modern building Dubai"],
+        "fees":       ["Dubai real estate modern", "Dubai property keys handover", "modern Dubai neighbourhood"],
+    },
+}
+
+# Reliable fallback URLs — known to work, high quality
+_FALLBACK_URLS = [
+    "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1200&h=1500&fit=crop&q=90",
+    "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=1200&h=1500&fit=crop&q=90",
+    "https://images.unsplash.com/photo-1546412414-e1885e51148b?w=1200&h=1500&fit=crop&q=90",
+    "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=1200&h=1500&fit=crop&q=90",
+    "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=1200&h=1500&fit=crop&q=90",
+    "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=1500&fit=crop&q=90",
+    "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&h=1500&fit=crop&q=90",
+    "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=1200&h=1500&fit=crop&q=90",
+    "https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=1200&h=1500&fit=crop&q=90",
+    "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=1200&h=1500&fit=crop&q=90",
 ]
 
-# Track recently used images to avoid repeats
-_recent_images: list[str] = []
+_recent_image_urls: list[str] = []
+
+
+async def _search_unsplash_quality(query: str) -> bytes | None:
+    """Search Unsplash with a proven query, return high-res image bytes."""
+    if not UNSPLASH_ACCESS_KEY:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(
+                "https://api.unsplash.com/search/photos",
+                params={"query": query, "per_page": 15, "orientation": "portrait", "content_filter": "high"},
+                headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
+            )
+            if r.status_code == 200:
+                results = r.json().get("results", [])
+                # Filter: only high-res, relevant photos
+                good = [p for p in results if
+                        p.get("width", 0) >= 1000 and
+                        p.get("height", 0) >= 1000 and
+                        _is_photo_relevant(p)]
+                if good:
+                    photo = random.choice(good)
+                    url = photo["urls"]["regular"] + "&w=1200&h=1500&fit=crop"
+                    if url not in _recent_image_urls:
+                        img_r = await client.get(url, timeout=20)
+                        if img_r.status_code == 200:
+                            _recent_image_urls.append(url)
+                            if len(_recent_image_urls) > 15:
+                                _recent_image_urls.pop(0)
+                            return img_r.content
+    except Exception as e:
+        log.error(f"Unsplash search error for '{query}': {e}")
+    return None
 
 
 async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = "nucassa_re") -> bytes | None:
-    """Fetch a background image — curated, proven images only."""
-    global _recent_images
+    """Fetch a background image matched to brand and topic content."""
 
     if slide_type == "cta":
         return None
 
-    if brand in ("nucassa_holdings", "listr"):
-        return _create_branded_background(brand, slide_type)
+    if brand in ("nucassa_holdings", "listr") and brand != "nucassa_re":
+        # Holdings and ListR can also use photos when available
+        pass
 
-    # Pick a curated image, avoiding recent ones
-    available = [url for url in _CURATED_IMAGES if url not in _recent_images]
+    topic_lower = topic.lower()
+    brand_map = _TOPIC_SEARCH_MAP.get(brand, _TOPIC_SEARCH_MAP["nucassa_re"])
+
+    # Find the best matching category based on topic keywords
+    matched_queries = None
+    for keyword, queries in brand_map.items():
+        if keyword != "default" and keyword in topic_lower:
+            matched_queries = queries
+            break
+    if not matched_queries:
+        matched_queries = brand_map.get("default", ["Dubai skyline sunset"])
+
+    # Try Unsplash with matched query
+    query = random.choice(matched_queries)
+    photo = await _search_unsplash_quality(query)
+    if photo:
+        return photo
+
+    # Try a second query if first fails
+    query2 = random.choice(brand_map.get("default", matched_queries))
+    photo = await _search_unsplash_quality(query2)
+    if photo:
+        return photo
+
+    # Fallback to curated URLs
+    available = [u for u in _FALLBACK_URLS if u not in _recent_image_urls]
     if not available:
-        _recent_images.clear()
-        available = _CURATED_IMAGES
-
+        available = _FALLBACK_URLS
     url = random.choice(available)
-    _recent_images.append(url)
-    if len(_recent_images) > 10:
-        _recent_images.pop(0)
-
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.get(url)
             if r.status_code == 200:
                 return r.content
     except Exception as e:
-        log.error(f"Curated photo fetch error: {e}")
+        log.error(f"Fallback photo error: {e}")
 
     return None
 
