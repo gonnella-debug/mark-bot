@@ -1,0 +1,82 @@
+2026-03-31T08:03:26Z INF Thank you for trying Cloudflare Tunnel. Doing so, without a Cloudflare account, is a quick way to experiment and try it out. However, be aware that these account-less Tunnels have no uptime guarantee, are subject to the Cloudflare Online Services Terms of Use (https://www.cloudflare.com/website-terms/), and Cloudflare reserves the right to investigate your use of Tunnels for violations of such terms. If you intend to use Tunnels in production you should use a pre-created named tunnel by following: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps
+2026-03-31T08:03:26Z INF Requesting new quick Tunnel on trycloudflare.com...
+2026-03-31T08:03:31Z INF +--------------------------------------------------------------------------------------------+
+2026-03-31T08:03:31Z INF |  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |
+2026-03-31T08:03:31Z INF |  https://mate-winner-primarily-september.trycloudflare.com                                 |
+2026-03-31T08:03:31Z INF +--------------------------------------------------------------------------------------------+
+2026-03-31T08:03:31Z INF Cannot determine default configuration path. No file [config.yml config.yaml] in [~/.cloudflared ~/.cloudflare-warp ~/cloudflare-warp /etc/cloudflared /usr/local/etc/cloudflared]
+2026-03-31T08:03:31Z INF Version 2026.3.0 (Checksum e5b9a54b2dfe8a22335035b8e92ead4a1e283eb0ecfeb66337ed3737209be4b7)
+2026-03-31T08:03:31Z INF GOOS: darwin, GOVersion: go1.26.1, GoArch: arm64
+2026-03-31T08:03:31Z INF Settings: map[ha-connections:1 protocol:quic url:http://localhost:8585]
+2026-03-31T08:03:31Z INF cloudflared will not automatically update if installed by a package manager.
+2026-03-31T08:03:31Z INF Generated Connector ID: d0909827-0845-44ea-8290-4b64dbf2fc28
+2026-03-31T08:03:31Z INF Initial protocol quic
+2026-03-31T08:03:31Z INF ICMP proxy will use 192.168.1.131 as source for IPv4
+2026-03-31T08:03:31Z INF ICMP proxy will use fe80::40:7d60:b18f:afcc in zone en1 as source for IPv6
+2026-03-31T08:03:31Z INF Created ICMP proxy listening on 192.168.1.131:0
+2026-03-31T08:03:31Z INF ICMP proxy will use 192.168.1.131 as source for IPv4
+2026-03-31T08:03:31Z INF ICMP proxy will use fe80::40:7d60:b18f:afcc in zone en1 as source for IPv6
+2026-03-31T08:03:31Z INF Starting metrics server on 127.0.0.1:20241/metrics
+2026-03-31T08:03:31Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.77
+2026-03-31T08:03:32Z INF Registered tunnel connection connIndex=0 connection=28469eeb-2539-4535-a788-ed4233ca20d7 event=0 ip=198.41.192.77 location=dxb02 protocol=quic
+2026-04-01T08:03:31Z ERR update check failed error="no release found"
+2026-04-01T09:28:30Z ERR  error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp 127.0.0.1:8585: connect: connection refused" connIndex=0 event=1 ingressRule=0 originService=http://localhost:8585
+2026-04-01T09:28:30Z ERR Request failed error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp 127.0.0.1:8585: connect: connection refused" connIndex=0 dest=https://mate-winner-primarily-september.trycloudflare.com/generate event=0 ip=198.41.192.77 type=http
+2026-04-01T09:32:42Z ERR  error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp 127.0.0.1:8585: connect: connection refused" connIndex=0 event=1 ingressRule=0 originService=http://localhost:8585
+2026-04-01T09:32:42Z ERR Request failed error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp 127.0.0.1:8585: connect: connection refused" connIndex=0 dest=https://mate-winner-primarily-september.trycloudflare.com/generate event=0 ip=198.41.192.77 type=http
+2026-04-01T09:44:22Z ERR  error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp 127.0.0.1:8585: connect: connection refused" connIndex=0 event=1 ingressRule=0 originService=http://localhost:8585
+2026-04-01T09:44:22Z ERR Request failed error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp 127.0.0.1:8585: connect: connection refused" connIndex=0 dest=https://mate-winner-primarily-september.trycloudflare.com/generate event=0 ip=198.41.192.77 type=http
+2026-04-02T02:34:12Z ERR  error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp 127.0.0.1:8585: connect: connection refused" connIndex=0 event=1 ingressRule=0 originService=http://localhost:8585
+2026-04-02T02:34:12Z ERR Request failed error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp 127.0.0.1:8585: connect: connection refused" connIndex=0 dest=https://mate-winner-primarily-september.trycloudflare.com/robots.txt event=0 ip=198.41.192.77 type=http
+2026-04-02T08:03:32Z ERR update check failed error="no release found"
+2026-04-02T23:01:26Z ERR  error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp 127.0.0.1:8585: connect: connection refused" connIndex=0 event=1 ingressRule=0 originService=http://localhost:8585
+2026-04-02T23:01:26Z ERR Request failed error="Unable to reach the origin service. The service may be down or it may not be responding to traffic from cloudflared: dial tcp 127.0.0.1:8585: connect: connection refused" connIndex=0 dest=https://mate-winner-primarily-september.trycloudflare.com/robots.txt event=0 ip=198.41.192.77 type=http
+2026-04-03T08:03:32Z ERR update check failed error="no release found"
+2026-04-04T01:07:48Z ERR failed to accept incoming stream requests error="failed to accept QUIC stream: timeout: no recent network activity" connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T01:07:48Z ERR failed to run the datagram handler error="timeout: no recent network activity" connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T01:07:48Z ERR failed to serve tunnel connection error="accept stream listener encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T01:07:48Z ERR Serve tunnel error error="accept stream listener encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T01:07:48Z INF Retrying connection in up to 1s connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T01:07:50Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T01:07:50Z INF Registered tunnel connection connIndex=0 connection=f0bf144d-2bea-4acf-a616-e84b5a83da18 event=0 ip=198.41.192.77 location=dxb02 protocol=quic
+2026-04-04T08:03:33Z ERR update check failed error="no release found"
+2026-04-04T10:17:12Z ERR failed to accept incoming stream requests error="failed to accept QUIC stream: timeout: no recent network activity" connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:17:12Z ERR failed to run the datagram handler error="timeout: no recent network activity" connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:17:12Z ERR failed to serve tunnel connection error="accept stream listener encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:17:12Z ERR Serve tunnel error error="accept stream listener encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:17:12Z INF Retrying connection in up to 1s connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:17:12Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:17:17Z ERR Failed to dial a quic connection error="failed to dial to edge with quic: timeout: no recent network activity" connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:17:17Z INF Retrying connection in up to 4s connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:17:21Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.47
+2026-04-04T10:17:21Z ERR Failed to dial a quic connection error="failed to dial to edge with quic: write udp4 0.0.0.0:60410->198.41.192.47:7844: sendmsg: network is unreachable" connIndex=0 event=0 ip=198.41.192.47
+2026-04-04T10:17:21Z INF Retrying connection in up to 8s connIndex=0 event=0 ip=198.41.192.47
+2026-04-04T10:17:24Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:17:24Z ERR Failed to dial a quic connection error="failed to dial to edge with quic: write udp4 0.0.0.0:60410->198.41.192.77:7844: sendmsg: network is unreachable" connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:17:24Z INF Retrying connection in up to 16s connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:17:28Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.27
+2026-04-04T10:17:28Z ERR Failed to dial a quic connection error="failed to dial to edge with quic: write udp4 0.0.0.0:60410->198.41.192.27:7844: sendmsg: network is unreachable" connIndex=0 event=0 ip=198.41.192.27
+2026-04-04T10:17:28Z INF Retrying connection in up to 32s connIndex=0 event=0 ip=198.41.192.27
+2026-04-04T10:17:41Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.200.13
+2026-04-04T10:17:41Z ERR Failed to dial a quic connection error="failed to dial to edge with quic: write udp4 0.0.0.0:60410->198.41.200.13:7844: sendmsg: network is unreachable" connIndex=0 event=0 ip=198.41.200.13
+2026-04-04T10:17:41Z INF Retrying connection in up to 1m4s connIndex=0 event=0 ip=198.41.200.13
+2026-04-04T10:18:10Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:18:10Z ERR Failed to dial a quic connection error="failed to dial to edge with quic: write udp4 0.0.0.0:60410->198.41.192.77:7844: sendmsg: network is unreachable" connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:18:10Z INF Retrying connection in up to 1m4s connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:18:38Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.47
+2026-04-04T10:18:42Z INF Registered tunnel connection connIndex=0 connection=06e70865-c4a0-4eba-96ba-4a20525ffd0e event=0 ip=198.41.192.47 location=dxb02 protocol=quic
+2026-04-04T10:19:12Z ERR failed to run the datagram handler error="write udp4 0.0.0.0:60410->198.41.192.47:7844: sendmsg: network is unreachable" connIndex=0 event=0 ip=198.41.192.47
+2026-04-04T10:19:12Z ERR failed to accept incoming stream requests error="failed to accept QUIC stream: write udp4 0.0.0.0:60410->198.41.192.47:7844: sendmsg: network is unreachable" connIndex=0 event=0 ip=198.41.192.47
+2026-04-04T10:19:12Z ERR failed to serve tunnel connection error="datagram manager encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.47
+2026-04-04T10:19:12Z ERR Serve tunnel error error="datagram manager encountered a failure while serving" connIndex=0 event=0 ip=198.41.192.47
+2026-04-04T10:19:12Z INF Retrying connection in up to 1s connIndex=0 event=0 ip=198.41.192.47
+2026-04-04T10:19:13Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.47
+2026-04-04T10:19:13Z ERR Failed to dial a quic connection error="failed to dial to edge with quic: write udp4 0.0.0.0:60410->198.41.192.47:7844: sendmsg: network is unreachable" connIndex=0 event=0 ip=198.41.192.47
+2026-04-04T10:19:13Z INF Retrying connection in up to 4s connIndex=0 event=0 ip=198.41.192.47
+2026-04-04T10:19:13Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:19:13Z ERR Failed to dial a quic connection error="failed to dial to edge with quic: write udp4 0.0.0.0:60410->198.41.192.77:7844: sendmsg: network is unreachable" connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:19:13Z INF Retrying connection in up to 8s connIndex=0 event=0 ip=198.41.192.77
+2026-04-04T10:19:14Z ERR Failed to refresh DNS local resolver error="lookup region1.v2.argotunnel.com on [::1]:53: read udp [::1]:55371->[::1]:53: read: connection refused"
+2026-04-04T10:19:20Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.200.43
+2026-04-04T10:19:20Z INF Registered tunnel connection connIndex=0 connection=39e0b24c-bb32-4181-b483-0f381690727e event=0 ip=198.41.200.43 location=sin14 protocol=quic
+2026-04-05T08:03:33Z ERR update check failed error="no release found"

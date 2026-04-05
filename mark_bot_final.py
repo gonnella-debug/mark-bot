@@ -873,34 +873,78 @@ def _create_branded_background(brand: str, slide_type: str = "cover") -> bytes:
     return buf.getvalue()
 
 
-# ── Sarah's Projects folder — background images from developer brochures ──
-# Folder ID: 1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif
-# Dubai property exterior/interior photos. All brands use this folder.
+# ── Background images from Google Drive ──
+# Primary: Sarah's Projects (1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif) — brochure PDFs with property photos
+# Fallback: Reference folders have pre-made slides with property photo backgrounds
+# On startup: build index of all accessible images >500KB via flat query
 
-SARAHS_PROJECTS_FOLDER_ID = "1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif"
 _bg_photo_index: list[dict] = []   # [{id, name, size_kb}, ...]
 _bg_index_ready = False
 _bg_recent_ids: list[str] = []
 
 
+def _build_index_sync() -> list[dict]:
+    """Flat query: find ALL images >500KB accessible to the service account.
+    Single API call with pagination — no recursion, no folder-by-folder scanning.
+    Filters out text slides, CTA cards, and thumbnails by size."""
+    svc = _get_drive_service()
+    if not svc:
+        return []
+
+    images = []
+    page_token = None
+    try:
+        while True:
+            results = svc.files().list(
+                q="mimeType contains 'image/' and trashed = false",
+                corpora="allDrives",
+                includeItemsFromAllDrives=True,
+                supportsAllDrives=True,
+                fields="nextPageToken, files(id, name, size)",
+                pageSize=1000,
+                pageToken=page_token
+            ).execute()
+
+            for f in results.get("files", []):
+                size = int(f.get("size", 0))
+                name = f.get("name", "")
+                # Only large images (>500KB = real photos, not icons/text slides)
+                # Skip Mark's own output (contains " — carousel —" or " — static —")
+                if size >= 500_000 and " — carousel — " not in name and " — static — " not in name:
+                    images.append({
+                        "id": f["id"],
+                        "name": name,
+                        "size_kb": size // 1024
+                    })
+
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                break
+    except Exception as e:
+        log.error(f"Drive index build error: {e}")
+
+    return images
+
+
 async def _build_background_index():
-    """ONE-TIME on startup: scan Sarah's Projects for property photos >500KB."""
+    """ONE-TIME on startup: build index of all property photos from Drive."""
     global _bg_photo_index, _bg_index_ready
 
     if _bg_index_ready:
         return
 
-    log.info("Building Drive background index from Sarah's Projects folder...")
+    log.info("Building Drive background index (flat query, all accessible images)...")
     try:
-        images = await asyncio.get_event_loop().run_in_executor(
-            None, _scan_folder_recursive, SARAHS_PROJECTS_FOLDER_ID, 500_000
-        )
+        images = await asyncio.get_event_loop().run_in_executor(None, _build_index_sync)
         _bg_photo_index = images
         _bg_index_ready = True
-        log.info(f"Drive index ready: {len(images)} property photos available")
+        if not images:
+            log.error("ZERO images found from Drive — renders will have no background photos")
+        else:
+            log.info(f"Drive index ready: {len(images)} property photos available")
     except Exception as e:
         log.error(f"Drive index build failed: {e}")
-        _bg_index_ready = True  # Mark ready to prevent infinite retries
+        _bg_index_ready = True
 
 
 async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = "nucassa_re") -> bytes | None:
