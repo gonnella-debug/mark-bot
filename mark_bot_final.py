@@ -832,24 +832,23 @@ def _create_branded_background(brand: str, slide_type: str = "cover") -> bytes:
 
 # ── Background images — Sarah's Projects folder ONLY ──
 # Folder ID: 1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif
-# Recursively search ALL subfolders for JPG/PNG files.
-# Filter with Claude vision: reject text, logos, branding, watermarks, screenshots.
-# Only use clean architectural photos, property exteriors/interiors, skylines.
+# Contains PDF brochures with property photos inside.
+# On startup: download PDFs, extract images with PyMuPDF, filter, cache clean photos.
 
-_bg_photo_cache: list[bytes] = []   # Clean property photo bytes (filtered)
-_bg_photo_index: list[dict] = []    # File index [{id, name, size}]
+_bg_photo_cache: list[bytes] = []   # Clean property photo bytes
+_bg_pdfs_found: int = 0
+_bg_extracted: int = 0
 _bg_index_ready = False
 _bg_recent_idx: list[int] = []
 
 
-def _find_images_in_sarahs_projects() -> list[dict]:
-    """Recursively search ALL subfolders of Sarah's Projects for JPG and PNG files.
-    No folder limit — scans everything. Returns file metadata only (no download)."""
+def _find_pdfs_in_sarahs_projects() -> list[dict]:
+    """Recursively search ALL subfolders of Sarah's Projects for PDF brochures."""
     svc = _get_drive_service()
     if not svc:
         return []
 
-    images = []
+    pdfs = []
     folders_to_scan = [GDRIVE_FOLDER_ID]
     scanned = 0
 
@@ -869,120 +868,81 @@ def _find_images_in_sarahs_projects() -> list[dict]:
                     mt = f.get("mimeType", "")
                     if mt == "application/vnd.google-apps.folder":
                         folders_to_scan.append(f["id"])
-                    elif mt in ("image/jpeg", "image/png", "image/jpg"):
-                        images.append({
-                            "id": f["id"],
-                            "name": f["name"],
-                            "size": int(f.get("size", 0))
-                        })
+                    elif mt == "application/pdf":
+                        size = int(f.get("size", 0))
+                        if size > 200_000:  # Skip tiny PDFs (<200KB)
+                            pdfs.append({"id": f["id"], "name": f["name"], "size": size})
                 page_token = results.get("nextPageToken")
                 if not page_token:
                     break
         except Exception as e:
-            log.error(f"Drive scan error in folder {fid}: {e}")
+            log.error(f"Drive scan error: {e}")
 
-    log.info(f"Sarah's Projects scan: {len(images)} JPG/PNG files in {scanned} folders")
-    return images
-
-
-async def _is_clean_photo_vision(img_bytes: bytes) -> bool:
-    """Use Claude vision to check if image is a clean architectural/property photo.
-    REJECT: text, logos, branding, watermarks, screenshots, rendered designs.
-    ACCEPT: clean property exteriors, interiors, skylines, landscapes."""
-    try:
-        img_b64 = base64.b64encode(img_bytes).decode("utf-8")
-        # Determine media type
-        if img_bytes[:3] == b'\xff\xd8\xff':
-            media_type = "image/jpeg"
-        else:
-            media_type = "image/png"
-
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": CLAUDE_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": "claude-haiku-4-5-20251001",
-                    "max_tokens": 10,
-                    "messages": [{
-                        "role": "user",
-                        "content": [
-                            {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": img_b64}},
-                            {"type": "text", "text": "Does this image contain ANY text, logos, branding, watermarks, website screenshots, or rendered marketing designs? Answer ONLY 'YES' or 'NO'."}
-                        ]
-                    }]
-                }
-            )
-            if r.status_code == 200:
-                answer = r.json()["content"][0]["text"].strip().upper()
-                return answer == "NO"
-    except Exception as e:
-        log.error(f"Vision filter error: {e}")
-    return True  # Allow on error to avoid blocking
+    log.info(f"Sarah's Projects: {len(pdfs)} PDF brochures in {scanned} folders")
+    return pdfs
 
 
 async def _build_background_index():
-    """ONE-TIME on startup: scan Sarah's Projects for JPG/PNG, download them,
-    filter with Claude vision, cache clean photos."""
-    global _bg_photo_cache, _bg_photo_index, _bg_index_ready
+    """ONE-TIME on startup: download PDFs from Sarah's Projects, extract property photos."""
+    global _bg_photo_cache, _bg_pdfs_found, _bg_extracted, _bg_index_ready
 
     if _bg_index_ready:
         return
 
-    log.info("Scanning Sarah's Projects folder for JPG/PNG files...")
+    log.info("Extracting property photos from Sarah's Projects PDF brochures...")
 
-    # Step 1: find all JPG/PNG files
-    _bg_photo_index = await asyncio.get_event_loop().run_in_executor(
-        None, _find_images_in_sarahs_projects
+    # Step 1: find all PDFs
+    pdfs = await asyncio.get_event_loop().run_in_executor(
+        None, _find_pdfs_in_sarahs_projects
     )
+    _bg_pdfs_found = len(pdfs)
 
-    if not _bg_photo_index:
-        log.error(f"ZERO JPG/PNG files found in Sarah's Projects folder ({GDRIVE_FOLDER_ID})")
+    if not pdfs:
+        log.error(f"ZERO PDFs in Sarah's Projects folder ({GDRIVE_FOLDER_ID})")
         _bg_index_ready = True
         return
 
-    log.info(f"Found {len(_bg_photo_index)} image files. Downloading and filtering...")
-
-    # Step 2: download each image and filter with Claude vision
+    # Step 2: download a sample of PDFs, extract images
+    sample = random.sample(pdfs, min(15, len(pdfs)))
     svc = _get_drive_service()
     from googleapiclient.http import MediaIoBaseDownload
 
-    for img_meta in _bg_photo_index:
-        if len(_bg_photo_cache) >= 50:  # Cap cache at 50 clean photos
+    for pdf in sample:
+        if len(_bg_photo_cache) >= 50:
             break
         try:
-            request = svc.files().get_media(fileId=img_meta["id"])
+            log.info(f"Processing: {pdf['name']} ({pdf['size']//1024}KB)")
+            request = svc.files().get_media(fileId=pdf["id"])
             buf = io.BytesIO()
             downloader = MediaIoBaseDownload(buf, request)
             done = False
             while not done:
                 _, done = downloader.next_chunk()
-            img_bytes = buf.getvalue()
 
-            # Filter: Claude vision rejects text/logos/branding
-            is_clean = await _is_clean_photo_vision(img_bytes)
-            if is_clean:
-                _bg_photo_cache.append(img_bytes)
-                log.info(f"  ✓ CLEAN: {img_meta['name']} ({img_meta['size']//1024}KB)")
-            else:
-                log.info(f"  ✗ REJECTED: {img_meta['name']} (has text/branding)")
+            imgs = await _extract_images_from_pdf_bytes(buf.getvalue())
+            if imgs:
+                # Sort by size (largest = hero renders), take top 3
+                imgs.sort(key=len, reverse=True)
+                for img in imgs[:3]:
+                    # _is_clean_photo rejects text-heavy pages, floor plans, icons
+                    if _is_clean_photo(img):
+                        _bg_photo_cache.append(img)
+                        _bg_extracted += 1
+                        log.info(f"  ✓ Extracted clean photo ({len(img)//1024}KB)")
+                    else:
+                        log.info(f"  ✗ Rejected (text/plan/icon)")
         except Exception as e:
-            log.error(f"Image download error ({img_meta['name']}): {e}")
+            log.error(f"PDF error ({pdf['name']}): {e}")
 
     _bg_index_ready = True
-    if _bg_photo_cache:
-        log.info(f"Background cache ready: {len(_bg_photo_cache)} clean photos from {len(_bg_photo_index)} total")
-    else:
-        log.error("ZERO clean photos passed filter — no backgrounds available")
+    log.info(f"Cache ready: {len(_bg_photo_cache)} clean photos from {len(sample)} PDFs ({_bg_pdfs_found} total PDFs)")
+    if not _bg_photo_cache:
+        log.error("ZERO clean photos extracted — renders will have no backgrounds")
 
 
 async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = "nucassa_re") -> bytes | None:
-    """Return a random clean property photo from Sarah's Projects folder.
-    No Unsplash. No Pexels. No other Drive folder. Sarah's Projects ONLY."""
+    """Return a random property photo extracted from Sarah's Projects PDFs.
+    Sarah's Projects folder is the ONLY image source. No exceptions."""
     global _bg_recent_idx
 
     if slide_type == "cta":
@@ -992,7 +952,7 @@ async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = 
         await _build_background_index()
 
     if not _bg_photo_cache:
-        log.error("No clean background photos available")
+        log.error("No background photos available")
         return None
 
     available = [i for i in range(len(_bg_photo_cache)) if i not in _bg_recent_idx]
@@ -2167,7 +2127,9 @@ async def health():
         "status": "Mark is running",
         "version": "4.0",
         "image_source": "Google Drive",
-        "drive_photos_available": len(_bg_photo_cache),
+        "drive_photos_cached": len(_bg_photo_cache),
+        "drive_pdfs_found": _bg_pdfs_found,
+        "drive_photos_extracted": _bg_extracted,
         "drive_index_ready": _bg_index_ready,
         "linkedin": li_status,
         "pending_approvals": len(pending_approvals),
