@@ -488,12 +488,8 @@ LOGO_URLS = {
 }
 
 # ── Google Drive image source (service account auth) ─────────────────────────
-# GDRIVE_SERVICE_ACCOUNT env var = base64-encoded service account JSON
-# All background images come from Drive reference folders — no Unsplash, no Pexels.
+# All background images from Sarah's Projects folder. No Unsplash. No Pexels.
 _gdrive_service = None
-_drive_photo_cache: dict[str, list[dict]] = {}  # brand → [{id, name, size_kb}]
-_drive_photo_cache_time: float = 0.0
-_drive_recent_ids: list[str] = []  # track recently used file IDs to avoid repeats
 
 
 def _get_drive_service():
@@ -502,7 +498,6 @@ def _get_drive_service():
     if _gdrive_service:
         return _gdrive_service
 
-    # Try GDRIVE_SERVICE_ACCOUNT (base64 JSON) first, then GOOGLE_SERVICE_ACCOUNT_JSON (raw)
     import base64 as b64mod
     sa_b64 = os.getenv("GDRIVE_SERVICE_ACCOUNT", "")
     sa_raw = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
@@ -530,69 +525,101 @@ def _get_drive_service():
             sa_info, scopes=["https://www.googleapis.com/auth/drive.readonly"]
         )
         _gdrive_service = gbuild("drive", "v3", credentials=creds)
-        log.info(f"Google Drive service initialized: {sa_info.get('client_email', '?')}")
+        log.info(f"Drive service initialized: {sa_info.get('client_email', '?')}")
         return _gdrive_service
     except Exception as e:
         log.error(f"Drive service init error: {e}")
         return None
 
 
-def _scan_drive_images(folder_id: str, min_size_kb: int = 500) -> list[dict]:
-    """Recursively scan a Drive folder for image files above min_size_kb.
-    Large images (>500KB) are real photos/renders.
-    Small images (<500KB) are text-heavy slides, icons, or CTA cards — skip them."""
+def _scan_drive_images_flat(folder_id: str, min_size_bytes: int = 500_000) -> list[dict]:
+    """Scan Drive folder for ALL images using a single flat query (no recursion).
+    Uses Drive API 'parents in' query which searches all descendants.
+    Only returns images > min_size_bytes (500KB = real photos, not text slides)."""
     svc = _get_drive_service()
     if not svc:
         return []
 
     images = []
+    page_token = None
     try:
-        results = svc.files().list(
-            q=f"'{folder_id}' in parents",
-            fields="files(id, name, mimeType, size)",
-            pageSize=100
-        ).execute()
+        while True:
+            results = svc.files().list(
+                q=f"mimeType contains 'image/' and size > {min_size_bytes}",
+                corpora="allDrives",
+                includeItemsFromAllDrives=True,
+                supportsAllDrives=True,
+                spaces="drive",
+                fields="nextPageToken, files(id, name, size, parents)",
+                pageSize=1000,
+                pageToken=page_token
+            ).execute()
 
-        for f in results.get("files", []):
-            if "image" in f.get("mimeType", ""):
-                size_kb = int(f.get("size", 0)) // 1024
-                if size_kb >= min_size_kb:
-                    images.append({"id": f["id"], "name": f["name"], "size_kb": size_kb})
-            elif f["mimeType"] == "application/vnd.google-apps.folder":
-                images.extend(_scan_drive_images(f["id"], min_size_kb))
+            for f in results.get("files", []):
+                images.append({
+                    "id": f["id"],
+                    "name": f["name"],
+                    "size_kb": int(f.get("size", 0)) // 1024
+                })
+
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                break
+
+        log.info(f"Drive flat scan complete: {len(images)} images found")
     except Exception as e:
-        log.error(f"Drive scan error for {folder_id}: {e}")
+        log.error(f"Drive flat scan error: {e}")
 
     return images
 
 
-async def _refresh_drive_photo_cache():
-    """Refresh the cached list of available Drive photos for each brand.
-    Called on first render and then every 6 hours."""
-    global _drive_photo_cache, _drive_photo_cache_time
-    import time as _t
+def _scan_folder_recursive(folder_id: str, min_size_bytes: int = 500_000) -> list[dict]:
+    """Scan a specific folder recursively. Uses batched folder listing."""
+    svc = _get_drive_service()
+    if not svc:
+        return []
 
-    if _drive_photo_cache and (_t.time() - _drive_photo_cache_time) < 21600:  # 6 hours
-        return
+    images = []
+    folders_to_scan = [folder_id]
+    scanned = 0
 
-    log.info("Refreshing Drive photo cache...")
+    while folders_to_scan:
+        fid = folders_to_scan.pop(0)
+        scanned += 1
+        if scanned > 200:  # Safety limit
+            log.warning(f"Drive scan hit 200 folder limit, stopping")
+            break
 
-    # Nucassa RE + Holdings share the same reference folder
-    nuc_images = await asyncio.get_event_loop().run_in_executor(
-        None, _scan_drive_images, GDRIVE_NUCASSA_REF_ID, 500
-    )
-    _drive_photo_cache["nucassa_re"] = nuc_images
-    _drive_photo_cache["nucassa_holdings"] = nuc_images
-    log.info(f"Nucassa Drive photos cached: {len(nuc_images)}")
+        try:
+            page_token = None
+            while True:
+                results = svc.files().list(
+                    q=f"'{fid}' in parents and trashed = false",
+                    fields="nextPageToken, files(id, name, mimeType, size)",
+                    pageSize=1000,
+                    pageToken=page_token
+                ).execute()
 
-    # ListR has its own reference folder
-    listr_images = await asyncio.get_event_loop().run_in_executor(
-        None, _scan_drive_images, GDRIVE_LISTR_REF_ID, 500
-    )
-    _drive_photo_cache["listr"] = listr_images
-    log.info(f"ListR Drive photos cached: {len(listr_images)}")
+                for f in results.get("files", []):
+                    if f["mimeType"] == "application/vnd.google-apps.folder":
+                        folders_to_scan.append(f["id"])
+                    elif "image" in f.get("mimeType", ""):
+                        size = int(f.get("size", 0))
+                        if size >= min_size_bytes:
+                            images.append({
+                                "id": f["id"],
+                                "name": f["name"],
+                                "size_kb": size // 1024
+                            })
 
-    _drive_photo_cache_time = _t.time()
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
+        except Exception as e:
+            log.error(f"Drive scan error for folder {fid}: {e}")
+
+    log.info(f"Drive recursive scan: {len(images)} images in {scanned} folders")
+    return images
 
 # Font paths — try common macOS/Linux locations
 def _find_font(name: str, fallbacks: list[str] = None) -> str:
@@ -630,8 +657,8 @@ def _get_font(name: str, size: int, fallbacks: list[str] = None) -> ImageFont.Fr
     return ImageFont.load_default()
 
 
-# Headline font: Montserrat SemiBold / Bold
-FONT_HEADLINE = lambda size: _get_font("Montserrat-SemiBold", size, ["Montserrat-Bold", "Montserrat", "Arial Bold", "Helvetica-Bold"])
+# Headline font: Montserrat ExtraBold (spec requirement)
+FONT_HEADLINE = lambda size: _get_font("Montserrat-ExtraBold", size, ["Montserrat-Bold", "Montserrat-SemiBold", "Montserrat", "Arial Bold", "Helvetica-Bold"])
 # Body font: Varta Medium
 FONT_BODY = lambda size: _get_font("Varta-Medium", size, ["Varta", "Varta-Regular", "Arial", "Helvetica"])
 
@@ -802,7 +829,7 @@ async def _fetch_drive_property_image() -> bytes | None:
 def _create_branded_background(brand: str, slide_type: str = "cover") -> bytes:
     """Generate a clean branded background for Holdings and ListR — no stock photos."""
     cfg = BRANDS[brand]
-    W, H = 1080, 1350
+    W, H = 1080, 1080
     primary = _hex_to_rgb(cfg["color_primary"])
     accent = _hex_to_rgb(cfg["color_accent"])
     secondary = _hex_to_rgb(cfg.get("color_secondary", "#3b3b3b"))
@@ -846,85 +873,53 @@ def _create_branded_background(brand: str, slide_type: str = "cover") -> bytes:
     return buf.getvalue()
 
 
-# ── STEP 1: Style profile (extracted from marketing reference folder on startup) ──
-# Measured from GDRIVE_NUCASSA_REF_ID designer reference images.
-# Loaded once on startup, never fetched again during runtime.
-
-STYLE_PROFILE = {
-    "canvas": (1080, 1350),
-    "accent_color": (227, 185, 151),       # #E3B997 — measured from reference PNGs
-    "primary_color": (0, 0, 0),            # Pure black backgrounds
-    "text_color": (255, 255, 255),         # White headlines
-    "cover_gradient": (0.30, 0.95),        # Top 30% transparent → bottom 95% opaque
-    "content_gradient": (0.40, 0.95),      # Heavier overlay for text readability
-    "cover_headline_size": 58,
-    "cover_subtext_size": 26,
-    "content_headline_size": 46,
-    "content_subtext_size": 26,
-    "content_bullet_size": 30,
-    "content_accent_size": 36,
-    "cta_headline_size": 46,
-    "cta_subtext_size": 40,
-    "cta_brand_size": 32,
-    "logo_cover_y_pct": 0.46,             # Logo centered at 46% height on covers
-    "logo_cover_size": 100,                # 100px wide
-    "logo_cover_opacity": 0.50,
-    "logo_content_size": 80,               # Top-right on content slides
-    "logo_content_opacity": 0.40,
-    "logo_cta_size_nucassa": 250,          # Large centered logo on CTA
-    "logo_cta_size_listr": 350,
-    "padding_x": 80,
-    "swipe_arrow_size": 52,
-    "swipe_arrow_y": 60,                   # px from bottom
-    "bullet_icon": "☑",                    # Checkmark, not chevron
-    "line_spacing": 16,
-}
-
-
-# ── STEP 2: Sarah's Projects folder — background images from developer brochures ──
+# ── Sarah's Projects folder — background images from developer brochures ──
 # Folder ID: 1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif
-# Contains Dubai property exterior/interior photos extracted from brochure PDFs.
-# All brands use this single folder for backgrounds.
+# Dubai property exterior/interior photos. All brands use this folder.
 
 SARAHS_PROJECTS_FOLDER_ID = "1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif"
 _bg_photo_index: list[dict] = []   # [{id, name, size_kb}, ...]
 _bg_index_ready = False
-_bg_recent_ids: list[str] = []     # Track recently used to avoid repeats
+_bg_recent_ids: list[str] = []
 
 
 async def _build_background_index():
-    """ONE-TIME on startup: scan Sarah's Projects folder for usable background photos.
-    Only images >500KB (real property photos), skip text slides and icons."""
+    """ONE-TIME on startup: scan Sarah's Projects for property photos >500KB."""
     global _bg_photo_index, _bg_index_ready
 
     if _bg_index_ready:
         return
 
-    log.info("Building background image index from Sarah's Projects folder...")
-    images = await asyncio.get_event_loop().run_in_executor(
-        None, _scan_drive_images, SARAHS_PROJECTS_FOLDER_ID, 500
-    )
-    _bg_photo_index = images
-    _bg_index_ready = True
-    log.info(f"Background index ready: {len(images)} property photos available from Drive")
+    log.info("Building Drive background index from Sarah's Projects folder...")
+    try:
+        images = await asyncio.get_event_loop().run_in_executor(
+            None, _scan_folder_recursive, SARAHS_PROJECTS_FOLDER_ID, 500_000
+        )
+        _bg_photo_index = images
+        _bg_index_ready = True
+        log.info(f"Drive index ready: {len(images)} property photos available")
+    except Exception as e:
+        log.error(f"Drive index build failed: {e}")
+        _bg_index_ready = True  # Mark ready to prevent infinite retries
 
 
 async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = "nucassa_re") -> bytes | None:
     """Fetch a random background photo from Sarah's Projects folder on Google Drive.
-    No Unsplash. No Pexels. Drive is the only image source."""
+    No Unsplash. No Pexels. No fallback. Drive is the only image source."""
     global _bg_recent_ids
 
     if slide_type == "cta":
         return None
 
     # Ensure index is built
-    await _build_background_index()
+    if not _bg_index_ready:
+        await _build_background_index()
 
     if not _bg_photo_index:
-        log.error("No background images available from Drive")
+        log.error("ZERO images from Drive — cannot render backgrounds")
         return None
 
-    # Pick a random photo, avoid recent repeats
+    # Pick random, avoid recent repeats
     available = [p for p in _bg_photo_index if p["id"] not in _bg_recent_ids]
     if not available:
         _bg_recent_ids.clear()
@@ -935,25 +930,41 @@ async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = 
     if len(_bg_recent_ids) > 30:
         _bg_recent_ids.pop(0)
 
-    # Download from Drive via service account
     svc = _get_drive_service()
     if not svc:
-        log.error("Drive service not available for photo fetch")
+        log.error("Drive service not available")
         return None
 
-    try:
-        from googleapiclient.http import MediaIoBaseDownload
-        request = svc.files().get_media(fileId=photo["id"])
-        buf = io.BytesIO()
-        downloader = MediaIoBaseDownload(buf, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-        log.info(f"Drive photo loaded: {photo['name']} ({photo['size_kb']}KB)")
-        return buf.getvalue()
-    except Exception as e:
-        log.error(f"Drive photo download error ({photo['name']}): {e}")
-        return None
+    # Try up to 3 photos — skip any with text/branding
+    for attempt in range(3):
+        try:
+            from googleapiclient.http import MediaIoBaseDownload
+            request = svc.files().get_media(fileId=photo["id"])
+            buf = io.BytesIO()
+            downloader = MediaIoBaseDownload(buf, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            img_bytes = buf.getvalue()
+
+            # Filter: reject images with text/branding overlays
+            if _is_clean_photo(img_bytes):
+                log.info(f"Drive photo: {photo['name']} ({photo['size_kb']}KB)")
+                return img_bytes
+            else:
+                log.info(f"Skipping {photo['name']} — has text/branding")
+                # Pick another photo
+                available = [p for p in _bg_photo_index if p["id"] not in _bg_recent_ids]
+                if available:
+                    photo = random.choice(available)
+                    _bg_recent_ids.append(photo["id"])
+                    continue
+                return img_bytes  # No alternatives, use anyway
+        except Exception as e:
+            log.error(f"Drive download error ({photo['name']}): {e}")
+            return None
+
+    return None
 
 
 async def _load_logo_image(brand: str) -> Image.Image | None:
@@ -1079,18 +1090,13 @@ def _add_watermark_logo(img: Image.Image, logo: Image.Image, opacity: float = 0.
 
 
 async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> bytes | None:
-    """Render a slide matching the Nucassa designer reference standard.
-    Pixel-matched from Google Drive reference images (measured April 2026).
-
-    COVER (slide 0): Full-bleed photo, heavy gradient (30%→95%), logo centered
-        at ~48% height at 100px wide 50% opacity, bold headline white center-aligned
-        in bottom 45%, subtext in accent (#E3B997) below, swipe arrow bottom-center.
-    CONTENT (slides 1-N-1): Full-bleed photo with very heavy overlay (40%→95%),
-        white headline centered, ☑ checkmark bullets in white, closing accent line,
-        small watermark logo centered at 40% height.
-    CTA (last slide): Pure black, accent question text centered at ~30% height,
-        white CTA line at ~42%, large logo ~250px centered at ~55%, brand name
-        in accent below logo.
+    """Render a 1080x1080 carousel slide. Exactly 3 slides per carousel.
+    SLIDE 1 (COVER): Full bleed photo, gradient 0.55-0.60, watermark logo 8-10% white centred,
+        small logo top-left, massive 80px+ headline bottom third, accent subtitle, swipe arrow.
+    SLIDE 2 (CONTENT): Same photo, gradient 0.65, logo top-right 40%, 3 stats/checklist,
+        stat numbers in accent, labels white, vertically centred.
+    SLIDE 3 (CTA): Pure dark bg (#1C1C1C or #000000), white question headline,
+        accent DM US TODAY, large 250px logo, brand name, website URL.
     """
     cfg = BRANDS[brand]
     slides = content.get("slides", [])
@@ -1098,22 +1104,15 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         return None
     slide = slides[slide_index]
     topic = content.get("_topic", "")
-    total_slides = len(slides)
-    is_last = slide_index == total_slides - 1
 
-    W, H = 1080, 1350
-    # Measured accent from reference images: avg (227, 185, 151) = #E3B997
-    # Warmer than config #CDA17F — use measured value for rendering
-    accent_measured = (227, 185, 151)
-    accent = accent_measured
-    primary = (0, 0, 0)  # Reference CTA slides are pure black, not #1C1C1C
+    W, H = 1080, 1080  # Square output
+    accent = _hex_to_rgb(cfg["color_accent"])  # #CDA17F or #B8962E per brand config
+    primary = _hex_to_rgb(cfg["color_primary"])  # #1C1C1C or #000000
     white = (255, 255, 255)
 
     logo = await _load_logo_image(brand)
 
-    def _paste_logo_centered(img, y_position, size=100, opacity=0.50):
-        """Logo centered horizontally at a given y position.
-        Reference images show logo centered, not top-left."""
+    def _paste_logo_small(img, x, y, size=60, opacity=0.50):
         if not logo:
             return
         wm = logo.copy()
@@ -1121,37 +1120,36 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         wm = wm.resize((size, int(wm.height * ratio)), Image.LANCZOS)
         if wm.mode == "RGBA":
             r, g, b, a = wm.split()
+            a = a.point(lambda p: int(p * opacity))
+            wm = Image.merge("RGBA", (r, g, b, a))
+        img.paste(wm, (x, y), wm)
+
+    def _paste_watermark(img, opacity=0.09):
+        """Faded white watermark logo centred. 8-10% opacity."""
+        if not logo:
+            return
+        wm = logo.copy()
+        wm_size = int(W * 0.25)  # 25% of canvas width
+        ratio = wm_size / wm.width
+        wm = wm.resize((wm_size, int(wm.height * ratio)), Image.LANCZOS)
+        # Convert to white silhouette at low opacity
+        if wm.mode == "RGBA":
+            r, g, b, a = wm.split()
+            r = r.point(lambda p: 255)
+            g = g.point(lambda p: 255)
+            b = b.point(lambda p: 255)
             a = a.point(lambda p: int(p * opacity))
             wm = Image.merge("RGBA", (r, g, b, a))
         x = (img.width - wm.width) // 2
-        img.paste(wm, (x, y_position), wm)
+        y = (img.height - wm.height) // 2
+        img.paste(wm, (x, y), wm)
 
-    def _paste_logo_top_right(img, size=80, opacity=0.40):
-        """Small logo top-right for content slides (Sheikh Hamdan reference style)."""
-        if not logo:
-            return
-        wm = logo.copy()
-        ratio = size / wm.width
-        wm = wm.resize((size, int(wm.height * ratio)), Image.LANCZOS)
-        if wm.mode == "RGBA":
-            r, g, b, a = wm.split()
-            a = a.point(lambda p: int(p * opacity))
-            wm = Image.merge("RGBA", (r, g, b, a))
-        x = img.width - size - 50
-        img.paste(wm, (x, 50), wm)
-
-    def _draw_swipe_arrow(draw_ctx, cx, cy, size=52):
-        """Circled arrow swipe indicator — bottom center of cover slides."""
+    def _draw_swipe_arrow(draw_ctx, cx, cy, size=48):
         draw_ctx.ellipse([cx - size // 2, cy - size // 2, cx + size // 2, cy + size // 2], outline=white, width=2)
-        arrow_font = FONT_HEADLINE(22)
-        draw_ctx.text((cx - 7, cy - 13), "→", font=arrow_font, fill=white)
+        arrow_font = FONT_HEADLINE(20)
+        draw_ctx.text((cx - 6, cy - 12), "→", font=arrow_font, fill=white)
 
-    def _full_bleed_photo(bg_img, photo_bytes, grayscale=False,
-                          grad_top=0.30, grad_bottom=0.95):
-        """Full-bleed photo with heavy gradient. Reference measured values:
-        Cover: top=0.30, bottom=0.95 (photo visible top 35%, fades to near-black)
-        Content: top=0.40, bottom=0.95 (heavier overlay, text readable everywhere)
-        """
+    def _full_bleed_photo(bg_img, photo_bytes, grad_top=0.55, grad_bottom=0.60):
         if not photo_bytes:
             return bg_img
         photo = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
@@ -1160,202 +1158,186 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
         left = (photo.width - W) // 2
         top_c = (photo.height - H) // 2
         photo = photo.crop((left, top_c, left + W, top_c + H))
-        if grayscale:
-            photo = photo.convert("L").convert("RGBA")
         bg_img.paste(photo, (0, 0))
         return _apply_gradient_overlay(bg_img, opacity_top=grad_top, opacity_bottom=grad_bottom)
 
-    # ── COVER SLIDE (slide 0): Photo + heavy gradient + centered text ──
-    if slide_index == 0 and not is_last:
+    # ── SLIDE 1: COVER ──
+    if slide_index == 0:
         bg = Image.new("RGBA", (W, H), (*primary, 255))
         photo_bytes = await _fetch_photo_for_slide("cover", topic, brand)
-        grayscale = random.choice([False, False, True])
-        bg = _full_bleed_photo(bg, photo_bytes, grayscale=grayscale,
-                               grad_top=0.30, grad_bottom=0.95)
+        bg = _full_bleed_photo(bg, photo_bytes, grad_top=0.55, grad_bottom=0.60)
 
-        # Logo centered at ~48% height, 100px wide, 50% opacity
-        _paste_logo_centered(bg, y_position=int(H * 0.46), size=100, opacity=0.50)
+        # Faded watermark logo centred at 8-10% opacity in white
+        _paste_watermark(bg, opacity=0.09)
+        # Small logo top-left corner
+        _paste_logo_small(bg, x=40, y=40, size=60, opacity=0.50)
 
         draw = ImageDraw.Draw(bg)
-
         headline = slide.get("headline", "").upper()
         subtext = slide.get("subtext", "")
-        padding_x = 80
+        padding_x = 60
         max_w = W - padding_x * 2
         dummy = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
 
-        # Cover headline: large bold white, centered
-        font_h = FONT_HEADLINE(58)
-        font_sub = FONT_BODY(26)
+        # Massive bold headline minimum 80px in bottom third
+        font_h = FONT_HEADLINE(80)
+        font_sub = FONT_BODY(24)
 
-        # Calculate block height
         block_height = 0
         if headline:
-            block_height += _draw_text_wrapped(dummy, headline, font_h, max_w, 0, 0, white) + 20
+            block_height += _draw_text_wrapped(dummy, headline, font_h, max_w, 0, 0, white) + 16
         if subtext:
-            block_height += _draw_text_wrapped(dummy, subtext.upper(), font_sub, max_w, 0, 0, accent) + 20
+            block_height += _draw_text_wrapped(dummy, subtext.upper(), font_sub, max_w, 0, 0, accent) + 16
 
-        # Text starts at ~55% height (below logo), leaves room for swipe arrow
-        text_y = H - 130 - block_height
-        text_y = max(text_y, int(H * 0.52))
+        # Bottom third positioning
+        text_y = H - 100 - block_height
+        text_y = max(text_y, int(H * 0.55))
 
         if headline:
-            h_height = _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_y, white, align="center")
-            text_y += h_height + 20
-
+            h_h = _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_y, white, align="center")
+            text_y += h_h + 16
         if subtext:
             _draw_text_wrapped(draw, subtext.upper(), font_sub, max_w, padding_x, text_y, accent, align="center")
 
-        # Swipe arrow at bottom center
-        _draw_swipe_arrow(draw, W // 2, H - 60)
+        _draw_swipe_arrow(draw, W // 2, H - 50)
 
         buf = io.BytesIO()
         bg.save(buf, format="PNG", quality=95)
         return buf.getvalue()
 
-    # ── CONTENT SLIDES (middle slides): Photo + very heavy overlay + list content ──
-    elif not is_last:
+    # ── SLIDE 2: CONTENT/STATS ──
+    elif slide_index == 1:
         bg = Image.new("RGBA", (W, H), (*primary, 255))
-        photo_bytes = await _fetch_photo_for_slide("content", topic + f"_slide{slide_index+1}", brand)
-        grayscale = random.choice([False, False, False, True])
-        # Heavier gradient for content slides — text must be fully readable
-        bg = _full_bleed_photo(bg, photo_bytes, grayscale=grayscale,
-                               grad_top=0.40, grad_bottom=0.95)
+        photo_bytes = await _fetch_photo_for_slide("content", topic, brand)
+        bg = _full_bleed_photo(bg, photo_bytes, grad_top=0.65, grad_bottom=0.65)
 
-        # Small watermark logo top-right (reference: Sheikh Hamdan style)
-        _paste_logo_top_right(bg, size=80, opacity=0.40)
+        # Small logo top-right at 40% opacity
+        _paste_logo_small(bg, x=W - 100, y=40, size=60, opacity=0.40)
 
         draw = ImageDraw.Draw(bg)
-
         headline = slide.get("headline", "").upper()
-        subtext = slide.get("subtext", "")
-        emphasis = slide.get("emphasis", "")
         points = slide.get("stats", slide.get("points", []))
-        padding_x = 80
+        subtext = slide.get("subtext", "")
+        padding_x = 70
         max_w = W - padding_x * 2
         dummy = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
 
-        # Content slides: slightly smaller headline, checkmark bullets
-        font_h = FONT_HEADLINE(46)
-        font_sub = FONT_BODY(26)
-        font_accent = FONT_HEADLINE(36)
-        font_bullet = FONT_HEADLINE(30)
+        font_h = FONT_HEADLINE(42)
+        font_stat_num = FONT_HEADLINE(48)
+        font_stat_label = FONT_BODY(24)
+        font_accent = FONT_HEADLINE(32)
 
-        # Calculate block height
+        # Calculate block height for vertical centering
         block_height = 0
         if headline:
             block_height += _draw_text_wrapped(dummy, headline, font_h, max_w, 0, 0, white) + 30
         if points:
-            for pt in points:
-                display = pt.split(":", 1)[1].strip() if ":" in pt and len(pt.split(":", 1)[1].strip()) > len(pt.split(":", 1)[0].strip()) else pt
-                block_height += _draw_text_wrapped(dummy, display.upper(), font_bullet, max_w, 0, 0, white) + 50
-        if emphasis:
-            block_height += _draw_text_wrapped(dummy, emphasis.upper(), font_accent, max_w, 0, 0, accent) + 20
-        if subtext and not points:
-            block_height += _draw_text_wrapped(dummy, subtext.upper(), font_sub, max_w, 0, 0, accent) + 20
+            block_height += len(points) * 90  # ~90px per stat row
+        if subtext:
+            block_height += 50
 
-        # Center the text block vertically (reference images show centered content)
-        text_y = max((H - block_height) // 2, int(H * 0.18))
+        text_y = max((H - block_height) // 2, 80)
 
-        # Draw headline
         if headline:
-            h_height = _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_y, white, align="center")
-            text_y += h_height + 30
+            h_h = _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, text_y, white, align="center")
+            text_y += h_h + 30
 
-        # Draw bullet points with ☑ checkmark (reference uses checkmark icons)
         if points:
             for pt in points:
-                display = pt.split(":", 1)[1].strip() if ":" in pt and len(pt.split(":", 1)[1].strip()) > len(pt.split(":", 1)[0].strip()) else pt
-                # Draw checkmark icon centered above each bullet
-                check_font = FONT_HEADLINE(32)
-                check_text = "☑"
-                check_bbox = check_font.getbbox(check_text)
-                check_w = check_bbox[2] - check_bbox[0]
-                draw.text((padding_x + (max_w - check_w) // 2, text_y), check_text, font=check_font, fill=white)
-                text_y += 38
-                # Draw the bullet text centered
-                bt_height = _draw_text_wrapped(draw, display.upper(), font_bullet, max_w, padding_x, text_y, white, align="center")
-                text_y += bt_height + 50
+                # Split "label: value" or just show whole thing
+                if ":" in pt:
+                    parts = pt.split(":", 1)
+                    num_text = parts[0].strip().upper()
+                    label_text = parts[1].strip().upper()
+                else:
+                    num_text = pt.upper()
+                    label_text = ""
 
-        # Closing accent line (subtext or emphasis)
-        if subtext and points:
-            text_y += 10
+                # Stat number in accent colour, large and bold
+                num_bbox = font_stat_num.getbbox(num_text)
+                num_w = num_bbox[2] - num_bbox[0]
+                draw.text((padding_x + (max_w - num_w) // 2, text_y), num_text, font=font_stat_num, fill=accent)
+                text_y += 52
+
+                # Label in white below
+                if label_text:
+                    label_bbox = font_stat_label.getbbox(label_text)
+                    label_w = label_bbox[2] - label_bbox[0]
+                    draw.text((padding_x + (max_w - label_w) // 2, text_y), label_text, font=font_stat_label, fill=white)
+                    text_y += 38
+
+        if subtext:
+            text_y += 20
             _draw_text_wrapped(draw, subtext.upper(), font_accent, max_w, padding_x, text_y, accent, align="center")
-        elif emphasis:
-            _draw_text_wrapped(draw, emphasis.upper(), font_accent, max_w, padding_x, text_y, accent, align="center")
-        elif subtext:
-            _draw_text_wrapped(draw, subtext.upper(), font_sub, max_w, padding_x, text_y, accent, align="center")
-
-        # Small watermark logo bottom-right
-        if logo:
-            wm = logo.copy()
-            wm_size = 60
-            ratio = wm_size / wm.width
-            wm = wm.resize((wm_size, int(wm.height * ratio)), Image.LANCZOS)
-            if wm.mode == "RGBA":
-                r, g, b, a = wm.split()
-                a = a.point(lambda p: int(p * 0.30))
-                wm = Image.merge("RGBA", (r, g, b, a))
-            bg.paste(wm, (W - wm_size - 50, H - int(wm.height * 1) - 50), wm)
 
         buf = io.BytesIO()
         bg.save(buf, format="PNG", quality=95)
         return buf.getvalue()
 
-    # ── CTA SLIDE (last slide): Pure black + accent question + white CTA + large logo ──
-    elif is_last:
-        bg = Image.new("RGBA", (W, H), (0, 0, 0, 255))  # Pure black
+    # ── SLIDE 3: CTA ──
+    elif slide_index == 2:
+        bg = Image.new("RGBA", (W, H), (*primary, 255))
         draw = ImageDraw.Draw(bg)
 
-        headline = slide.get("headline", slide.get("cta_line", cfg["cta"])).upper()
-        subtext = slide.get("subtext", "")
-        padding_x = 100
+        headline = slide.get("headline", slide.get("cta_line", "")).upper()
+        if not headline:
+            headline = cfg.get("cta", "DM US TODAY").upper()
+        subtext = slide.get("subtext", cfg.get("cta", "DM US TODAY")).upper()
+        website = cfg.get("website", "")
+        padding_x = 80
         max_w = W - padding_x * 2
         dummy = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-
         brand_name = "LISTR" if "listr" in brand else "NUCASSA"
 
-        # Reference: accent question at ~30%, white CTA at ~42%, logo at ~55%
-        font_h = FONT_HEADLINE(46)
-        font_sub = FONT_HEADLINE(40)
+        font_h = FONT_HEADLINE(44)
+        font_cta = FONT_HEADLINE(36)
+        font_brand = FONT_HEADLINE(28)
+        font_url = FONT_BODY(18)
 
-        # Calculate total block to center it
-        h_height = _draw_text_wrapped(dummy, headline, font_h, max_w, 0, 0, accent) if headline else 0
-        sub_height = _draw_text_wrapped(dummy, subtext.upper(), font_sub, max_w, 0, 0, white) if subtext else 0
-        logo_h_est = 220  # logo + brand name height estimate
-        gap1 = 50  # gap between headline and subtext
-        gap2 = 80  # gap between subtext and logo
-        total_h = h_height + gap1 + sub_height + gap2 + logo_h_est
+        # Calculate total block for vertical centering
+        h_height = _draw_text_wrapped(dummy, headline, font_h, max_w, 0, 0, white) if headline else 0
+        cta_height = _draw_text_wrapped(dummy, subtext, font_cta, max_w, 0, 0, accent) if subtext else 0
+        logo_h_est = 280  # logo + brand name + url
+        gap = 40
+        total_h = h_height + gap + cta_height + gap + logo_h_est
         start_y = (H - total_h) // 2
 
-        # Draw accent headline (the question)
+        # Bold white uppercase question headline centred
         if headline:
-            _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, start_y, accent, align="center")
-            start_y += h_height + gap1
+            _draw_text_wrapped(draw, headline, font_h, max_w, padding_x, start_y, white, align="center")
+            start_y += h_height + gap
 
-        # Draw white CTA line
+        # Accent colour CTA below headline
         if subtext:
-            _draw_text_wrapped(draw, subtext.upper(), font_sub, max_w, padding_x, start_y, white, align="center")
-            start_y += sub_height + gap2
+            _draw_text_wrapped(draw, subtext, font_cta, max_w, padding_x, start_y, accent, align="center")
+            start_y += cta_height + gap
 
-        # Large centered logo (~250px wide for Nucassa, 350px for ListR)
+        # Large logo centred 250px
         if logo:
             lw = 350 if brand == "listr" else 250
             lr = lw / logo.width
             lh = int(logo.height * lr)
             logo_big = logo.copy().resize((lw, lh), Image.LANCZOS)
             bg.paste(logo_big, ((W - lw) // 2, start_y), logo_big)
-            start_y += lh + 25
+            start_y += lh + 20
 
-        # Brand name in accent below logo
-        bn_font = FONT_HEADLINE(32)
-        bn_bbox = bn_font.getbbox(brand_name)
+        # Brand name below logo in accent colour
+        bn_bbox = font_brand.getbbox(brand_name)
         bn_w = bn_bbox[2] - bn_bbox[0]
-        draw.text(((W - bn_w) // 2, start_y), brand_name, font=bn_font, fill=accent)
+        draw.text(((W - bn_w) // 2, start_y), brand_name, font=font_brand, fill=accent)
+        start_y += 40
+
+        # Website URL small at bottom
+        if website:
+            url_bbox = font_url.getbbox(website)
+            url_w = url_bbox[2] - url_bbox[0]
+            draw.text(((W - url_w) // 2, H - 60), website, font=font_url, fill=(180, 180, 180))
 
         buf = io.BytesIO()
         bg.save(buf, format="PNG", quality=95)
         return buf.getvalue()
+
+    return None
 
 
 async def render_carousel_images(content: dict, brand: str) -> list[bytes]:
