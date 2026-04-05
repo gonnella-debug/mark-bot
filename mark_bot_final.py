@@ -468,7 +468,7 @@ async def generate_batch(brand: str, days: int = 14) -> list:
     return batch
 
 
-# ── SLIDE RENDERER (Pillow + Unsplash + Real Logos) ──────────────────────────
+# ── SLIDE RENDERER (Pillow + Google Drive + Real Logos) ──────────────────────
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 import io
@@ -487,109 +487,112 @@ LOGO_URLS = {
     "listr": "https://d2xsxph8kpxj0f.cloudfront.net/310519663442673192/8rDTGLeYbqNNdTnaNjEFq5/ListRLogo_white_97e809bf.png",
 }
 
-# Brand-specific search terms — each brand has its own visual identity
-BRAND_SEARCH_TERMS = {
-    "nucassa_re": {
-        "cover": [
-            "Dubai skyline sunset golden hour", "Dubai marina night aerial", "Dubai downtown towers night",
-            "luxury villa pool Dubai", "Dubai penthouse interior modern", "Dubai aerial palm jumeirah",
-            "Dubai waterfront sunset", "luxury apartment balcony city view", "Dubai beach resort aerial",
-            "Dubai Burj Khalifa night", "modern Dubai architecture", "Dubai residential tower luxury",
-        ],
-        "data": [
-            "dark modern architecture abstract", "luxury apartment interior moody",
-            "dark office glass building", "abstract geometric dark building",
-            "glass facade reflection night", "dark luxury marble interior",
-        ],
-    },
-    "nucassa_holdings": {
-        "cover": [
-            "Dubai financial district DIFC tower night", "Abu Dhabi ADGM skyline night",
-            "corporate boardroom skyline view dark", "luxury office interior dark modern",
-            "bank vault door steel dark", "signing contract document pen dark",
-            "Dubai skyline aerial night financial", "glass office tower dark reflection",
-            "corporate meeting room dark modern", "Dubai business bay financial tower night",
-            "safe deposit vault dark steel", "office desk skyline window dark",
-        ],
-        "data": [
-            "financial chart dark screen", "portfolio analytics dark screen",
-            "abstract dark gold geometric pattern", "dark marble texture luxury",
-            "corporate office dark empty modern", "abstract dark lines architecture",
-        ],
-    },
-    "listr": {
-        "cover": [
-            "Dubai skyline sunset golden hour", "Dubai marina aerial", "Dubai downtown night lights",
-            "modern apartment building Dubai", "Dubai residential community aerial", "Dubai villa exterior",
-            "Dubai property aerial view", "Dubai beach apartment view", "luxury Dubai townhouse",
-            "Dubai JBR beach aerial", "Dubai sports city aerial", "modern Dubai neighbourhood",
-        ],
-        "data": [
-            "dark modern architecture abstract", "abstract geometric dark building",
-            "glass facade reflection night", "concrete texture modern building",
-            "dark luxury marble interior", "modern skyscraper detail dark",
-        ],
-    },
-}
+# ── Google Drive image source (service account auth) ─────────────────────────
+# GDRIVE_SERVICE_ACCOUNT env var = base64-encoded service account JSON
+# All background images come from Drive reference folders — no Unsplash, no Pexels.
+_gdrive_service = None
+_drive_photo_cache: dict[str, list[dict]] = {}  # brand → [{id, name, size_kb}]
+_drive_photo_cache_time: float = 0.0
+_drive_recent_ids: list[str] = []  # track recently used file IDs to avoid repeats
 
-# Fallback search terms if brand not specified
-UNSPLASH_SEARCH_TERMS = BRAND_SEARCH_TERMS["nucassa_re"]
 
-# Brand-specific curated fallback URLs
-BRAND_FALLBACK_PHOTOS = {
-    "nucassa_re": {
-        "cover": [
-            "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1546412414-e1885e51148b?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1514632595-4944383f2737?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=2000&h=2500&fit=crop&q=95",
-        ],
-        "data": [
-            "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1448630360428-65456885c650?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1459767129954-1b1c1f9b9ace?w=2000&h=2500&fit=crop&q=95",
-        ],
-    },
-    "nucassa_holdings": {
-        "cover": [],  # Holdings uses ONLY Pexels/Unsplash API search with strict terms — no random curated fallbacks
-        "data": [],
-    },
-    "listr": {
-        "cover": [
-            "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1545893835-abaa50cbe628?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1582672060674-bc2bd808a8b5?w=2000&h=2500&fit=crop&q=95",
-        ],
-        "data": [
-            "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1448630360428-65456885c650?w=2000&h=2500&fit=crop&q=95",
-            "https://images.unsplash.com/photo-1459767129954-1b1c1f9b9ace?w=2000&h=2500&fit=crop&q=95",
-        ],
-    },
-}
+def _get_drive_service():
+    """Get or create Google Drive API service using service account credentials."""
+    global _gdrive_service
+    if _gdrive_service:
+        return _gdrive_service
 
-# Legacy alias
-UNSPLASH_PHOTOS = BRAND_FALLBACK_PHOTOS["nucassa_re"]
+    # Try GDRIVE_SERVICE_ACCOUNT (base64 JSON) first, then GOOGLE_SERVICE_ACCOUNT_JSON (raw)
+    import base64 as b64mod
+    sa_b64 = os.getenv("GDRIVE_SERVICE_ACCOUNT", "")
+    sa_raw = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 
-UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY", "")
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
+    sa_info = None
+    if sa_b64:
+        try:
+            sa_info = json.loads(b64mod.b64decode(sa_b64).decode())
+        except Exception as e:
+            log.error(f"Failed to decode GDRIVE_SERVICE_ACCOUNT: {e}")
+    if not sa_info and sa_raw:
+        try:
+            sa_info = json.loads(sa_raw)
+        except Exception as e:
+            log.error(f"Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
+
+    if not sa_info:
+        log.error("No Google Drive service account credentials found")
+        return None
+
+    try:
+        from google.oauth2 import service_account as sa_mod
+        from googleapiclient.discovery import build as gbuild
+        creds = sa_mod.Credentials.from_service_account_info(
+            sa_info, scopes=["https://www.googleapis.com/auth/drive.readonly"]
+        )
+        _gdrive_service = gbuild("drive", "v3", credentials=creds)
+        log.info(f"Google Drive service initialized: {sa_info.get('client_email', '?')}")
+        return _gdrive_service
+    except Exception as e:
+        log.error(f"Drive service init error: {e}")
+        return None
+
+
+def _scan_drive_images(folder_id: str, min_size_kb: int = 500) -> list[dict]:
+    """Recursively scan a Drive folder for image files above min_size_kb.
+    Large images (>500KB) are real photos/renders.
+    Small images (<500KB) are text-heavy slides, icons, or CTA cards — skip them."""
+    svc = _get_drive_service()
+    if not svc:
+        return []
+
+    images = []
+    try:
+        results = svc.files().list(
+            q=f"'{folder_id}' in parents",
+            fields="files(id, name, mimeType, size)",
+            pageSize=100
+        ).execute()
+
+        for f in results.get("files", []):
+            if "image" in f.get("mimeType", ""):
+                size_kb = int(f.get("size", 0)) // 1024
+                if size_kb >= min_size_kb:
+                    images.append({"id": f["id"], "name": f["name"], "size_kb": size_kb})
+            elif f["mimeType"] == "application/vnd.google-apps.folder":
+                images.extend(_scan_drive_images(f["id"], min_size_kb))
+    except Exception as e:
+        log.error(f"Drive scan error for {folder_id}: {e}")
+
+    return images
+
+
+async def _refresh_drive_photo_cache():
+    """Refresh the cached list of available Drive photos for each brand.
+    Called on first render and then every 6 hours."""
+    global _drive_photo_cache, _drive_photo_cache_time
+    import time as _t
+
+    if _drive_photo_cache and (_t.time() - _drive_photo_cache_time) < 21600:  # 6 hours
+        return
+
+    log.info("Refreshing Drive photo cache...")
+
+    # Nucassa RE + Holdings share the same reference folder
+    nuc_images = await asyncio.get_event_loop().run_in_executor(
+        None, _scan_drive_images, GDRIVE_NUCASSA_REF_ID, 500
+    )
+    _drive_photo_cache["nucassa_re"] = nuc_images
+    _drive_photo_cache["nucassa_holdings"] = nuc_images
+    log.info(f"Nucassa Drive photos cached: {len(nuc_images)}")
+
+    # ListR has its own reference folder
+    listr_images = await asyncio.get_event_loop().run_in_executor(
+        None, _scan_drive_images, GDRIVE_LISTR_REF_ID, 500
+    )
+    _drive_photo_cache["listr"] = listr_images
+    log.info(f"ListR Drive photos cached: {len(listr_images)}")
+
+    _drive_photo_cache_time = _t.time()
 
 # Font paths — try common macOS/Linux locations
 def _find_font(name: str, fallbacks: list[str] = None) -> str:
@@ -645,81 +648,6 @@ def _hex_to_rgba(hex_color: str, alpha: int = 255) -> tuple:
     return (r, g, b, alpha)
 
 
-# Tags/descriptions that indicate irrelevant photos — filter these out
-_PHOTO_BLOCKLIST = [
-    "bus", "tour", "tourist", "cartoon", "illustration", "drawing", "clip art",
-    "meme", "selfie", "crowd", "protest", "accident", "trash", "garbage",
-    "food truck", "street vendor", "tuk tuk", "rickshaw", "camping",
-    "beef", "food", "plate", "restaurant", "wine", "cocktail", "dessert",
-    "car interior", "steering wheel", "dashboard", "mercedes", "bmw", "audi",
-    "watch", "rolex", "jewelry", "ring", "necklace", "bracelet",
-    "cigar", "whiskey", "champagne", "bottle", "drink", "glass",
-    "jet", "airplane", "aircraft", "yacht", "boat", "ship",
-]
-
-
-def _is_photo_relevant(photo_data: dict) -> bool:
-    """Check if an Unsplash photo is relevant based on its metadata."""
-    desc = (photo_data.get("description") or "").lower()
-    alt = (photo_data.get("alt_description") or "").lower()
-    tags = " ".join(t.get("title", "") for t in photo_data.get("tags", [])).lower()
-    combined = f"{desc} {alt} {tags}"
-    return not any(blocked in combined for blocked in _PHOTO_BLOCKLIST)
-
-
-async def _fetch_unsplash_photo(search_term: str, topic: str = "") -> bytes | None:
-    """Fetch a photo from Unsplash API search, sized for 1080x1350."""
-    if UNSPLASH_ACCESS_KEY:
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                r = await client.get(
-                    "https://api.unsplash.com/search/photos",
-                    params={"query": search_term, "per_page": 20, "orientation": "portrait"},
-                    headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
-                )
-                if r.status_code == 200:
-                    results = r.json().get("results", [])
-                    # Filter out irrelevant photos
-                    results = [r for r in results if _is_photo_relevant(r)]
-                    if results:
-                        photo = random.choice(results)
-                        url = photo["urls"]["regular"] + "&w=1080&h=1350&fit=crop"
-                        img_r = await client.get(url, timeout=20)
-                        if img_r.status_code == 200:
-                            return img_r.content
-        except Exception as e:
-            log.error(f"Unsplash API error: {e}")
-
-    return None
-
-
-async def _fetch_pexels_photo(search_term: str) -> bytes | None:
-    """Fetch a photo from Pexels API as secondary source."""
-    if not PEXELS_API_KEY:
-        return None
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(
-                "https://api.pexels.com/v1/search",
-                params={"query": search_term, "per_page": 20, "orientation": "portrait"},
-                headers={"Authorization": PEXELS_API_KEY},
-            )
-            if r.status_code == 200:
-                photos = r.json().get("photos", [])
-                # Filter out irrelevant Pexels photos
-                photos = [p for p in photos if not any(
-                    blocked in (p.get("alt", "") or "").lower()
-                    for blocked in _PHOTO_BLOCKLIST
-                )]
-                if photos:
-                    photo = random.choice(photos)
-                    url = photo["src"]["large2x"]
-                    img_r = await client.get(url, timeout=20)
-                    if img_r.status_code == 200:
-                        return img_r.content
-    except Exception as e:
-        log.error(f"Pexels API error: {e}")
-    return None
 
 
 # ── Drive brochure image cache ──
@@ -918,163 +846,114 @@ def _create_branded_background(brand: str, slide_type: str = "cover") -> bytes:
     return buf.getvalue()
 
 
-# ── Verified image library — NO API search, NO randomness, every image guaranteed ──
+# ── STEP 1: Style profile (extracted from marketing reference folder on startup) ──
+# Measured from GDRIVE_NUCASSA_REF_ID designer reference images.
+# Loaded once on startup, never fetched again during runtime.
 
-# Every URL below has been verified: Dubai skyline, towers, luxury villas, modern architecture.
-# NO buses, NO food, NO tourists, NO animals, NO random stock photos.
-_VERIFIED_IMAGES = {
-    "dubai_skyline": [
-        "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1518684079-3c830dcef090?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1546412414-e1885e51148b?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1583417319070-4a69db38a482?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1580674684081-7617fbf3d745?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1597659840241-37e2b9c2f55f?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1741380530342-10f7b1214eeb?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1619807038543-2ce7d4c9fb15?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1615747476328-41153cf6da54?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1642504447080-ca95df2d73a2?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1579390668747-a917e5dabc10?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1651063820152-d3e7a27b4d2b?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1580164541787-ea5633f2118e?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1559649900-40f09af87c9c?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1578419176695-7093f9faf11a?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1645640322813-25aaef578106?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1589395752253-a04b9ca0722a?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1575404215583-863f8d55a411?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1514632595-4944383f2737?w=1200&h=1500&fit=crop&q=90",
-    ],
-    "dubai_towers": [
-        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1608991156162-3c55b3cf05d3?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1643904736472-8b77e93ca3d7?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1582120031356-35f21bf61055?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1573755654354-4235c9ab1ac9?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1552051263-6eb5bb6905b9?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1533395427226-788cee25cc7b?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1594962591758-00dba6b83e39?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1448630360428-65456885c650?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1459767129954-1b1c1f9b9ace?w=1200&h=1500&fit=crop&q=90",
-    ],
-    "luxury_property": [
-        "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1728048756980-e21666532e24?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1651108066220-f61c22fc281f?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1603077864615-538e955d1ad1?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1564703048291-bcf7f001d83d?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1502005229762-cf1b2da7c5d6?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1551380789-5783a7c84669?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1583270423828-7af6195c4928?w=1200&h=1500&fit=crop&q=90",
-    ],
-    "night_city": [
-        "https://images.unsplash.com/photo-1621073831231-faa453d28112?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1650217124806-36e7a0b7afb8?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1657106251952-2d584ebdf886?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1671618802338-682e248b48e8?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1663790080792-2129962584db?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1699118837104-72f6f62f09aa?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1694675272206-85c7e00da3e3?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1706464971762-bcacd432cf22?w=1200&h=1500&fit=crop&q=90",
-    ],
-    "corporate_financial": [
-        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1554469384-e58fac16e23a?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1768069794857-9306ac167c6e?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1768069794830-f2bd21c67621?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1760263137665-366b1dcf8e1f?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1760263137552-c42c62621220?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1608991156162-3c55b3cf05d3?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1573755654354-4235c9ab1ac9?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1604667758760-ffb2931593a0?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1619259896604-0fe0fd32ac43?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1574886248530-3063f166bf95?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1553696779-79d887fdd22a?w=1200&h=1500&fit=crop&q=90",
-    ],
-    "modern_architecture": [
-        "https://images.unsplash.com/photo-1604667758760-ffb2931593a0?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1619259896604-0fe0fd32ac43?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1543218683-e3fdc8d9fd0d?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1601624311242-d7de9926253f?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1553696779-79d887fdd22a?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1553696718-0ff0872ee05f?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1574886248530-3063f166bf95?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1546617334-bb46979e8ecc?w=1200&h=1500&fit=crop&q=90",
-        "https://images.unsplash.com/photo-1567096417093-abb2acca7cfc?w=1200&h=1500&fit=crop&q=90",
-    ],
+STYLE_PROFILE = {
+    "canvas": (1080, 1350),
+    "accent_color": (227, 185, 151),       # #E3B997 — measured from reference PNGs
+    "primary_color": (0, 0, 0),            # Pure black backgrounds
+    "text_color": (255, 255, 255),         # White headlines
+    "cover_gradient": (0.30, 0.95),        # Top 30% transparent → bottom 95% opaque
+    "content_gradient": (0.40, 0.95),      # Heavier overlay for text readability
+    "cover_headline_size": 58,
+    "cover_subtext_size": 26,
+    "content_headline_size": 46,
+    "content_subtext_size": 26,
+    "content_bullet_size": 30,
+    "content_accent_size": 36,
+    "cta_headline_size": 46,
+    "cta_subtext_size": 40,
+    "cta_brand_size": 32,
+    "logo_cover_y_pct": 0.46,             # Logo centered at 46% height on covers
+    "logo_cover_size": 100,                # 100px wide
+    "logo_cover_opacity": 0.50,
+    "logo_content_size": 80,               # Top-right on content slides
+    "logo_content_opacity": 0.40,
+    "logo_cta_size_nucassa": 250,          # Large centered logo on CTA
+    "logo_cta_size_listr": 350,
+    "padding_x": 80,
+    "swipe_arrow_size": 52,
+    "swipe_arrow_y": 60,                   # px from bottom
+    "bullet_icon": "☑",                    # Checkmark, not chevron
+    "line_spacing": 16,
 }
 
-# Topic keyword → image category mapping
-_TOPIC_TO_CATEGORY = {
-    "marina": "dubai_skyline", "waterfront": "dubai_skyline", "creek": "dubai_skyline",
-    "downtown": "dubai_towers", "burj": "dubai_towers", "khalifa": "dubai_towers", "tower": "dubai_towers",
-    "villa": "luxury_property", "penthouse": "luxury_property", "luxury": "luxury_property",
-    "interior": "luxury_property", "home": "luxury_property", "house": "luxury_property",
-    "night": "night_city", "dark": "night_city", "moody": "night_city",
-    "architecture": "modern_architecture", "glass": "modern_architecture", "modern": "modern_architecture",
-    "yield": "dubai_skyline", "market": "dubai_skyline", "invest": "dubai_towers",
-    "capital": "night_city", "data": "dubai_towers", "record": "dubai_skyline",
-}
 
-_recent_image_urls: list[str] = []
+# ── STEP 2: Sarah's Projects folder — background images from developer brochures ──
+# Folder ID: 1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif
+# Contains Dubai property exterior/interior photos extracted from brochure PDFs.
+# All brands use this single folder for backgrounds.
+
+SARAHS_PROJECTS_FOLDER_ID = "1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif"
+_bg_photo_index: list[dict] = []   # [{id, name, size_kb}, ...]
+_bg_index_ready = False
+_bg_recent_ids: list[str] = []     # Track recently used to avoid repeats
+
+
+async def _build_background_index():
+    """ONE-TIME on startup: scan Sarah's Projects folder for usable background photos.
+    Only images >500KB (real property photos), skip text slides and icons."""
+    global _bg_photo_index, _bg_index_ready
+
+    if _bg_index_ready:
+        return
+
+    log.info("Building background image index from Sarah's Projects folder...")
+    images = await asyncio.get_event_loop().run_in_executor(
+        None, _scan_drive_images, SARAHS_PROJECTS_FOLDER_ID, 500
+    )
+    _bg_photo_index = images
+    _bg_index_ready = True
+    log.info(f"Background index ready: {len(images)} property photos available from Drive")
 
 
 async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = "nucassa_re") -> bytes | None:
-    """Fetch a verified background image. No API search. Every image guaranteed quality."""
-    global _recent_image_urls
+    """Fetch a random background photo from Sarah's Projects folder on Google Drive.
+    No Unsplash. No Pexels. Drive is the only image source."""
+    global _bg_recent_ids
 
     if slide_type == "cta":
         return None
 
-    topic_lower = topic.lower()
+    # Ensure index is built
+    await _build_background_index()
 
-    # Brand-specific default categories
-    if brand == "nucassa_holdings":
-        category = "corporate_financial"
-    elif brand == "listr":
-        # ListR = property marketplace — use property + Dubai images
-        category = random.choice(["luxury_property", "dubai_skyline", "modern_architecture"])
-    else:
-        # Nucassa RE — pick category based on topic keywords
-        category = None
-        for keyword, cat in _TOPIC_TO_CATEGORY.items():
-            if keyword in topic_lower:
-                category = cat
-                break
-        if not category:
-            category = random.choice(["dubai_skyline", "dubai_towers", "night_city"])
+    if not _bg_photo_index:
+        log.error("No background images available from Drive")
+        return None
 
-    pool = _VERIFIED_IMAGES.get(category, _VERIFIED_IMAGES["dubai_skyline"])
-    available = [u for u in pool if u not in _recent_image_urls]
+    # Pick a random photo, avoid recent repeats
+    available = [p for p in _bg_photo_index if p["id"] not in _bg_recent_ids]
     if not available:
-        # Try other categories before clearing
-        for cat_name, cat_urls in _VERIFIED_IMAGES.items():
-            available = [u for u in cat_urls if u not in _recent_image_urls]
-            if available:
-                break
-    if not available:
-        _recent_image_urls.clear()
-        available = pool
+        _bg_recent_ids.clear()
+        available = _bg_photo_index
 
-    url = random.choice(available)
-    _recent_image_urls.append(url)
-    if len(_recent_image_urls) > 20:
-        _recent_image_urls.pop(0)
+    photo = random.choice(available)
+    _bg_recent_ids.append(photo["id"])
+    if len(_bg_recent_ids) > 30:
+        _bg_recent_ids.pop(0)
+
+    # Download from Drive via service account
+    svc = _get_drive_service()
+    if not svc:
+        log.error("Drive service not available for photo fetch")
+        return None
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.get(url)
-            if r.status_code == 200:
-                return r.content
-            log.warning(f"Image fetch failed ({r.status_code}): {url}")
+        from googleapiclient.http import MediaIoBaseDownload
+        request = svc.files().get_media(fileId=photo["id"])
+        buf = io.BytesIO()
+        downloader = MediaIoBaseDownload(buf, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        log.info(f"Drive photo loaded: {photo['name']} ({photo['size_kb']}KB)")
+        return buf.getvalue()
     except Exception as e:
-        log.error(f"Image fetch error: {e}")
-
-    return None
+        log.error(f"Drive photo download error ({photo['name']}): {e}")
+        return None
 
 
 async def _load_logo_image(brand: str) -> Image.Image | None:
@@ -2405,7 +2284,10 @@ async def health():
     li_status = "connected" if LI_ACCESS_TOKEN else "needs_auth"
     return {
         "status": "Mark is running",
-        "version": "3.0",
+        "version": "4.0",
+        "image_source": "Google Drive",
+        "drive_photos_available": len(_bg_photo_index),
+        "drive_index_ready": _bg_index_ready,
         "linkedin": li_status,
         "pending_approvals": len(pending_approvals),
         "pending_batches": {k: len(v) for k, v in pending_batches.items()},
@@ -2704,4 +2586,6 @@ async def startup():
 
     asyncio.create_task(telegram_listener())
     asyncio.create_task(linkedin_token_monitor())
-    log.info("Mark v3 — AI Marketing Bot — online")
+    # STEP 1: Build background image index from Sarah's Projects folder on startup
+    asyncio.create_task(_build_background_index())
+    log.info("Mark v4 — AI Marketing Bot — online (images: Google Drive)")
