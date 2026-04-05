@@ -830,115 +830,132 @@ def _create_branded_background(brand: str, slide_type: str = "cover") -> bytes:
     return buf.getvalue()
 
 
-# ── Background images from Sarah's Projects folder (1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif) ──
-# The ONLY Drive folder Mark accesses. All brands pull background photos from here.
+# ── Background images — Sarah's Projects folder ONLY ──
+# Folder ID: 1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif
+# Recursively search ALL subfolders for JPG/PNG files.
+# Filter with Claude vision: reject text, logos, branding, watermarks, screenshots.
+# Only use clean architectural photos, property exteriors/interiors, skylines.
 
-_bg_photo_index: list[dict] = []   # [{id, name, size_kb}, ...]
+_bg_photo_cache: list[bytes] = []   # Clean property photo bytes (filtered)
+_bg_photo_index: list[dict] = []    # File index [{id, name, size}]
 _bg_index_ready = False
-_bg_recent_ids: list[str] = []
+_bg_recent_idx: list[int] = []
 
 
-def _build_index_sync() -> list[dict]:
-    """Flat query: find ALL images >500KB accessible to the service account.
-    Single API call with pagination — no recursion, no folder-by-folder scanning.
-    Filters out text slides, CTA cards, and thumbnails by size."""
+def _find_images_in_sarahs_projects() -> list[dict]:
+    """Recursively search ALL subfolders of Sarah's Projects for JPG and PNG files.
+    No folder limit — scans everything. Returns file metadata only (no download)."""
     svc = _get_drive_service()
     if not svc:
         return []
 
     images = []
-    page_token = None
-    try:
-        while True:
-            results = svc.files().list(
-                q="mimeType contains 'image/' and trashed = false",
-                corpora="allDrives",
-                includeItemsFromAllDrives=True,
-                supportsAllDrives=True,
-                fields="nextPageToken, files(id, name, size)",
-                pageSize=1000,
-                pageToken=page_token
-            ).execute()
+    folders_to_scan = [GDRIVE_FOLDER_ID]
+    scanned = 0
 
-            for f in results.get("files", []):
-                size = int(f.get("size", 0))
-                name = f.get("name", "")
-                # Only large images (>500KB = real photos, not icons/text slides)
-                # Skip Mark's own output (contains " — carousel —" or " — static —")
-                if size >= 500_000 and " — carousel — " not in name and " — static — " not in name:
-                    images.append({
-                        "id": f["id"],
-                        "name": name,
-                        "size_kb": size // 1024
-                    })
+    while folders_to_scan:
+        fid = folders_to_scan.pop(0)
+        scanned += 1
+        try:
+            page_token = None
+            while True:
+                results = svc.files().list(
+                    q=f"'{fid}' in parents and trashed = false",
+                    fields="nextPageToken, files(id, name, mimeType, size)",
+                    pageSize=1000,
+                    pageToken=page_token
+                ).execute()
+                for f in results.get("files", []):
+                    mt = f.get("mimeType", "")
+                    if mt == "application/vnd.google-apps.folder":
+                        folders_to_scan.append(f["id"])
+                    elif mt in ("image/jpeg", "image/png", "image/jpg"):
+                        images.append({
+                            "id": f["id"],
+                            "name": f["name"],
+                            "size": int(f.get("size", 0))
+                        })
+                page_token = results.get("nextPageToken")
+                if not page_token:
+                    break
+        except Exception as e:
+            log.error(f"Drive scan error in folder {fid}: {e}")
 
-            page_token = results.get("nextPageToken")
-            if not page_token:
-                break
-    except Exception as e:
-        log.error(f"Drive index build error: {e}")
-
+    log.info(f"Sarah's Projects scan: {len(images)} JPG/PNG files in {scanned} folders")
     return images
 
 
+async def _is_clean_photo_vision(img_bytes: bytes) -> bool:
+    """Use Claude vision to check if image is a clean architectural/property photo.
+    REJECT: text, logos, branding, watermarks, screenshots, rendered designs.
+    ACCEPT: clean property exteriors, interiors, skylines, landscapes."""
+    try:
+        img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+        # Determine media type
+        if img_bytes[:3] == b'\xff\xd8\xff':
+            media_type = "image/jpeg"
+        else:
+            media_type = "image/png"
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": CLAUDE_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-haiku-4-5-20251001",
+                    "max_tokens": 10,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": img_b64}},
+                            {"type": "text", "text": "Does this image contain ANY text, logos, branding, watermarks, website screenshots, or rendered marketing designs? Answer ONLY 'YES' or 'NO'."}
+                        ]
+                    }]
+                }
+            )
+            if r.status_code == 200:
+                answer = r.json()["content"][0]["text"].strip().upper()
+                return answer == "NO"
+    except Exception as e:
+        log.error(f"Vision filter error: {e}")
+    return True  # Allow on error to avoid blocking
+
+
 async def _build_background_index():
-    """ONE-TIME on startup: build index of all property photos from Drive."""
-    global _bg_photo_index, _bg_index_ready
+    """ONE-TIME on startup: scan Sarah's Projects for JPG/PNG, download them,
+    filter with Claude vision, cache clean photos."""
+    global _bg_photo_cache, _bg_photo_index, _bg_index_ready
 
     if _bg_index_ready:
         return
 
-    log.info("Building Drive background index (flat query, all accessible images)...")
-    try:
-        images = await asyncio.get_event_loop().run_in_executor(None, _build_index_sync)
-        _bg_photo_index = images
-        _bg_index_ready = True
-        if not images:
-            log.error("ZERO images found from Drive — renders will have no background photos")
-        else:
-            log.info(f"Drive index ready: {len(images)} property photos available")
-    except Exception as e:
-        log.error(f"Drive index build failed: {e}")
-        _bg_index_ready = True
+    log.info("Scanning Sarah's Projects folder for JPG/PNG files...")
 
-
-async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = "nucassa_re") -> bytes | None:
-    """Fetch a random background photo from Sarah's Projects folder on Google Drive.
-    No Unsplash. No Pexels. No fallback. Drive is the only image source."""
-    global _bg_recent_ids
-
-    if slide_type == "cta":
-        return None
-
-    # Ensure index is built
-    if not _bg_index_ready:
-        await _build_background_index()
+    # Step 1: find all JPG/PNG files
+    _bg_photo_index = await asyncio.get_event_loop().run_in_executor(
+        None, _find_images_in_sarahs_projects
+    )
 
     if not _bg_photo_index:
-        log.error("ZERO images from Drive — cannot render backgrounds")
-        return None
+        log.error(f"ZERO JPG/PNG files found in Sarah's Projects folder ({GDRIVE_FOLDER_ID})")
+        _bg_index_ready = True
+        return
 
-    # Pick random, avoid recent repeats
-    available = [p for p in _bg_photo_index if p["id"] not in _bg_recent_ids]
-    if not available:
-        _bg_recent_ids.clear()
-        available = _bg_photo_index
+    log.info(f"Found {len(_bg_photo_index)} image files. Downloading and filtering...")
 
-    photo = random.choice(available)
-    _bg_recent_ids.append(photo["id"])
-    if len(_bg_recent_ids) > 30:
-        _bg_recent_ids.pop(0)
-
+    # Step 2: download each image and filter with Claude vision
     svc = _get_drive_service()
-    if not svc:
-        log.error("Drive service not available")
-        return None
+    from googleapiclient.http import MediaIoBaseDownload
 
-    # Try up to 3 photos — skip any with text/branding
-    for attempt in range(3):
+    for img_meta in _bg_photo_index:
+        if len(_bg_photo_cache) >= 50:  # Cap cache at 50 clean photos
+            break
         try:
-            from googleapiclient.http import MediaIoBaseDownload
-            request = svc.files().get_media(fileId=photo["id"])
+            request = svc.files().get_media(fileId=img_meta["id"])
             buf = io.BytesIO()
             downloader = MediaIoBaseDownload(buf, request)
             done = False
@@ -946,24 +963,50 @@ async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = 
                 _, done = downloader.next_chunk()
             img_bytes = buf.getvalue()
 
-            # Filter: reject images with text/branding overlays
-            if _is_clean_photo(img_bytes):
-                log.info(f"Drive photo: {photo['name']} ({photo['size_kb']}KB)")
-                return img_bytes
+            # Filter: Claude vision rejects text/logos/branding
+            is_clean = await _is_clean_photo_vision(img_bytes)
+            if is_clean:
+                _bg_photo_cache.append(img_bytes)
+                log.info(f"  ✓ CLEAN: {img_meta['name']} ({img_meta['size']//1024}KB)")
             else:
-                log.info(f"Skipping {photo['name']} — has text/branding")
-                # Pick another photo
-                available = [p for p in _bg_photo_index if p["id"] not in _bg_recent_ids]
-                if available:
-                    photo = random.choice(available)
-                    _bg_recent_ids.append(photo["id"])
-                    continue
-                return img_bytes  # No alternatives, use anyway
+                log.info(f"  ✗ REJECTED: {img_meta['name']} (has text/branding)")
         except Exception as e:
-            log.error(f"Drive download error ({photo['name']}): {e}")
-            return None
+            log.error(f"Image download error ({img_meta['name']}): {e}")
 
-    return None
+    _bg_index_ready = True
+    if _bg_photo_cache:
+        log.info(f"Background cache ready: {len(_bg_photo_cache)} clean photos from {len(_bg_photo_index)} total")
+    else:
+        log.error("ZERO clean photos passed filter — no backgrounds available")
+
+
+async def _fetch_photo_for_slide(slide_type: str, topic: str = "", brand: str = "nucassa_re") -> bytes | None:
+    """Return a random clean property photo from Sarah's Projects folder.
+    No Unsplash. No Pexels. No other Drive folder. Sarah's Projects ONLY."""
+    global _bg_recent_idx
+
+    if slide_type == "cta":
+        return None
+
+    if not _bg_index_ready:
+        await _build_background_index()
+
+    if not _bg_photo_cache:
+        log.error("No clean background photos available")
+        return None
+
+    available = [i for i in range(len(_bg_photo_cache)) if i not in _bg_recent_idx]
+    if not available:
+        _bg_recent_idx.clear()
+        available = list(range(len(_bg_photo_cache)))
+
+    idx = random.choice(available)
+    _bg_recent_idx.append(idx)
+    if len(_bg_recent_idx) > 20:
+        _bg_recent_idx.pop(0)
+
+    log.info(f"Background photo #{idx} ({len(_bg_photo_cache[idx])//1024}KB)")
+    return _bg_photo_cache[idx]
 
 
 async def _load_logo_image(brand: str) -> Image.Image | None:
@@ -2124,7 +2167,7 @@ async def health():
         "status": "Mark is running",
         "version": "4.0",
         "image_source": "Google Drive",
-        "drive_photos_available": len(_bg_photo_index),
+        "drive_photos_available": len(_bg_photo_cache),
         "drive_index_ready": _bg_index_ready,
         "linkedin": li_status,
         "pending_approvals": len(pending_approvals),
