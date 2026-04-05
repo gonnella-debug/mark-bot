@@ -68,17 +68,8 @@ CANVA_PASSWORD      = os.getenv("CANVA_PASSWORD", "")
 
 # Google Drive
 GDRIVE_API_KEY        = os.getenv("GDRIVE_API_KEY")
-GDRIVE_FOLDER_ID        = os.getenv("GDRIVE_FOLDER_ID", "1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif")
-GDRIVE_LISTR_REF_ID     = os.getenv("GDRIVE_LISTR_REF_ID", "1C7axRZjVVxP9TjCzGVxdRHdfICYieT1L")
-GDRIVE_NUCASSA_REF_ID   = os.getenv("GDRIVE_NUCASSA_REF_ID", "10REvNFPKlF42_6HuuSRf7iBHf8CKAfWU")
-
-# Google Drive — Mark Marketing folder (approved content saved here)
-GDRIVE_MARKETING_FOLDER_ID = "1CJQsPFZqDuOTNkMWLx5C191uyo9bT_fj"
-GDRIVE_MARKETING_BRAND_FOLDERS = {
-    "nucassa_re": "1h9-rHbwy_u781I5JK9AfC9Ig4UGgJ9lV",
-    "nucassa_holdings": "1jZXVpp4zxKD4my1CU2NBEerlH81iNpJ2",
-    "listr": "1DTSCTvgN_nMR9Wn71vzGHphF8QKXfZbM",
-}
+# Sarah's Projects folder — the ONLY Drive folder Mark touches for images
+GDRIVE_FOLDER_ID        = "1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif"
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 
 # Instagram Account IDs (from Meta Business Manager)
@@ -376,46 +367,12 @@ async def generate_single(brand: str, content_type: str, topic: str = "", pdf_b6
         return resp_json["content"][0]["text"]
 
     if pdf_b64:
-        # PDF brochure post — fetch brand reference images to maintain style
-        if brand == "listr":
-            ref_images = await fetch_listr_reference_images()
-        else:
-            ref_images = await fetch_nucassa_reference_images()
-        prompt = f"""You are looking at example posts from {cfg['name']}'s Instagram account.
-Study the visual style, tone and layout carefully.
-Now read the attached developer brochure and create ORIGINAL {content_type} content for {cfg['name']} using the brochure facts.
+        # PDF brochure post
+        prompt = f"""Read the attached developer brochure and create ORIGINAL {content_type} content for {cfg['name']} using the brochure facts.
 Do NOT reproduce brochure text — extract the facts and write original content in the brand's voice.
 Brand tone: {cfg['tone']} | CTA: {cfg['cta']} | Website: {cfg['website']}
 Return JSON only."""
-        raw = await _call_with_images(prompt, ref_images, pdf_b64)
-
-    elif brand == "listr":
-        ref_images = await fetch_listr_reference_images()
-        prompt = f"""You are looking at example posts from the ListR.ae Instagram account.
-Study the visual style, tone, layout and content approach in these examples carefully.
-Now create a NEW ORIGINAL {content_type} post for ListR.ae in the same style.
-Topic: {topic}
-Tone: {cfg['tone']} | CTA: {cfg['cta']} | Website: {cfg['website']}
-Match the energy and style you see in the examples but make completely original content.
-Return JSON only."""
-        if ref_images:
-            raw = await _call_with_images(prompt, ref_images)
-        else:
-            raw = await call_claude(prompt)
-
-    elif brand in ("nucassa_re", "nucassa_holdings"):
-        ref_images = await fetch_nucassa_reference_images()
-        prompt = f"""You are looking at example posts from {cfg['name']}'s Instagram account.
-Study the visual style, tone, layout and content approach in these examples carefully.
-Now create a NEW ORIGINAL {content_type} post for {cfg['name']} in the same style.
-Topic: {topic}
-Tone: {cfg['tone']} | CTA: {cfg['cta']} | Handle: {cfg['handle']} | Website: {cfg['website']}
-Use accurate verifiable Dubai real estate data. Match the style in the examples but make completely original content.
-Return JSON only."""
-        if ref_images:
-            raw = await _call_with_images(prompt, ref_images)
-        else:
-            raw = await call_claude(prompt)
+        raw = await _call_with_images(prompt, [], pdf_b64)
 
     else:
         prompt = f"""Create a {content_type} post for {cfg['name']}.
@@ -873,10 +830,8 @@ def _create_branded_background(brand: str, slide_type: str = "cover") -> bytes:
     return buf.getvalue()
 
 
-# ── Background images from Google Drive ──
-# Primary: Sarah's Projects (1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif) — brochure PDFs with property photos
-# Fallback: Reference folders have pre-made slides with property photo backgrounds
-# On startup: build index of all accessible images >500KB via flat query
+# ── Background images from Sarah's Projects folder (1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif) ──
+# The ONLY Drive folder Mark accesses. All brands pull background photos from here.
 
 _bg_photo_index: list[dict] = []   # [{id, name, size_kb}, ...]
 _bg_index_ready = False
@@ -1042,26 +997,6 @@ async def _load_logo_image(brand: str) -> Image.Image | None:
                     return img
         except Exception as e:
             log.error(f"Logo URL fetch error for {brand}: {e}")
-
-    # Try from Drive
-    folder_id = GDRIVE_MARKETING_BRAND_FOLDERS.get(brand)
-    if folder_id and GDRIVE_API_KEY:
-        files = await list_drive_files(folder_id)
-        logo_file = next((f for f in files if "logo" in f.get("name", "").lower() and "image" in f.get("mimeType", "")), None)
-        if logo_file:
-            try:
-                async with httpx.AsyncClient(timeout=15) as client:
-                    r = await client.get(
-                        f"https://www.googleapis.com/drive/v3/files/{logo_file['id']}",
-                        params={"alt": "media", "key": GDRIVE_API_KEY},
-                    )
-                    if r.status_code == 200:
-                        img = Image.open(io.BytesIO(r.content)).convert("RGBA")
-                        _logo_cache[brand] = img
-                        log.info(f"Loaded logo for {brand} from Drive")
-                        return img
-            except Exception as e:
-                log.error(f"Logo fetch error: {e}")
 
     _logo_cache[brand] = None
     return None
@@ -1857,40 +1792,6 @@ async def list_drive_files(folder_id: str, mime_filter: str = None) -> list:
     return []
 
 
-async def _collect_images_recursive(folder_id: str, max_depth: int = 2, _depth: int = 0, _limit: int = 10) -> list:
-    """Recursively search Drive subfolders for image files, up to max_depth levels."""
-    if _depth > max_depth:
-        return []
-    files = await list_drive_files(folder_id)
-    images = []
-    subfolder_ids = []
-    for f in files:
-        mime = f.get("mimeType", "")
-        if "image" in mime:
-            images.append(f)
-            if len(images) >= _limit:
-                return images
-        elif mime == "application/vnd.google-apps.folder":
-            subfolder_ids.append(f["id"])
-    for sub_id in subfolder_ids:
-        if len(images) >= _limit:
-            break
-        images.extend(await _collect_images_recursive(sub_id, max_depth, _depth + 1, _limit - len(images)))
-    return images
-
-
-async def fetch_listr_reference_images() -> list[str]:
-    """Fetch up to 3 ListR example images from Drive as base64 (searches subfolders)."""
-    image_files = await _collect_images_recursive(GDRIVE_LISTR_REF_ID)
-    image_files = image_files[-3:]  # most recent (last returned by API)
-    return await _fetch_images_as_b64(image_files)
-
-
-async def fetch_nucassa_reference_images() -> list[str]:
-    """Fetch up to 3 Nucassa example images from Drive as base64 (searches subfolders)."""
-    image_files = await _collect_images_recursive(GDRIVE_NUCASSA_REF_ID)
-    image_files = image_files[-3:]  # most recent (last returned by API)
-    return await _fetch_images_as_b64(image_files)
 
 
 def _resize_image_bytes(img_bytes: bytes, max_bytes: int = 4_000_000) -> bytes:
@@ -1917,37 +1818,6 @@ def _resize_image_bytes(img_bytes: bytes, max_bytes: int = 4_000_000) -> bytes:
         return img_bytes if len(img_bytes) <= max_bytes else b""
 
 
-async def _fetch_images_as_b64(image_files: list) -> list[str]:
-    """Download a list of Drive image files, resize if needed, return as base64."""
-    images_b64 = []
-    for f in image_files:
-        try:
-            async with httpx.AsyncClient(timeout=20) as client:
-                r = await client.get(
-                    f"https://www.googleapis.com/drive/v3/files/{f['id']}",
-                    params={"alt": "media", "key": GDRIVE_API_KEY},
-                )
-                if r.status_code == 200:
-                    resized = _resize_image_bytes(r.content)
-                    if resized:
-                        images_b64.append(base64.b64encode(resized).decode("utf-8"))
-        except Exception as e:
-            log.error(f"Reference image fetch error: {e}")
-    log.info(f"Fetched {len(images_b64)} reference images from Drive")
-    return images_b64
-    if not GDRIVE_API_KEY:
-        return []
-    params = {
-        "q": f"'{GDRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false",
-        "fields": "files(id,name)", "key": GDRIVE_API_KEY, "pageSize": 50,
-    }
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get("https://www.googleapis.com/drive/v3/files", params=params)
-            return r.json().get("files", [])
-    except Exception as e:
-        log.error(f"Drive list error: {e}")
-    return []
 
 
 async def fetch_pdf_b64(file_id: str) -> str | None:
@@ -2004,67 +1874,9 @@ async def _get_drive_upload_token() -> str | None:
 
 
 async def save_to_drive(brand: str, images: list[bytes], caption: str, content_type: str = "carousel") -> bool:
-    """Save rendered images + caption to the brand's Mark Marketing subfolder."""
-    token = await _get_drive_upload_token()
-    if not token:
-        return False
-    folder_id = GDRIVE_MARKETING_BRAND_FOLDERS.get(brand)
-    if not folder_id:
-        log.error(f"No Drive folder mapped for brand: {brand}")
-        return False
-    brand_name = BRANDS[brand]["name"]
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M")
-    saved = 0
-    headers = {"Authorization": f"Bearer {token}"}
-    async with httpx.AsyncClient(timeout=30) as client:
-        for i, img_bytes in enumerate(images):
-            fname = f"{brand_name} — {content_type} — {ts} — slide{i+1}.png"
-            metadata = json.dumps({"name": fname, "parents": [folder_id]})
-            boundary = "mark_upload_boundary"
-            body = (
-                f"--{boundary}\r\n"
-                f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
-                f"{metadata}\r\n"
-                f"--{boundary}\r\n"
-                f"Content-Type: image/png\r\n\r\n"
-            ).encode() + img_bytes + f"\r\n--{boundary}--\r\n".encode()
-            try:
-                r = await client.post(
-                    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
-                    headers={**headers, "Content-Type": f"multipart/related; boundary={boundary}"},
-                    content=body,
-                )
-                if r.status_code in (200, 201):
-                    saved += 1
-                else:
-                    log.error(f"Drive upload failed ({r.status_code}): {r.text[:200]}")
-            except Exception as e:
-                log.error(f"Drive upload error: {e}")
-        # Save caption as text file
-        cap_fname = f"{brand_name} — {content_type} — {ts} — caption.txt"
-        cap_meta = json.dumps({"name": cap_fname, "parents": [folder_id]})
-        cap_boundary = "mark_cap_boundary"
-        cap_body = (
-            f"--{cap_boundary}\r\n"
-            f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
-            f"{cap_meta}\r\n"
-            f"--{cap_boundary}\r\n"
-            f"Content-Type: text/plain; charset=UTF-8\r\n\r\n"
-            f"{caption}\r\n"
-            f"--{cap_boundary}--\r\n"
-        ).encode()
-        try:
-            r = await client.post(
-                "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-                headers={**headers, "Content-Type": f"multipart/related; boundary={cap_boundary}"},
-                content=cap_body,
-            )
-            if r.status_code in (200, 201):
-                saved += 1
-        except Exception as e:
-            log.error(f"Drive caption upload error: {e}")
-    log.info(f"Saved {saved} files to Drive for {brand_name}")
-    return saved > 0
+    """Stub — Drive save disabled. Mark only reads from Sarah's Projects folder."""
+    log.info(f"Drive save skipped for {brand} (disabled)")
+    return False
 
 
 # ── TELEGRAM ──────────────────────────────────────────────────────────────────
@@ -2216,7 +2028,7 @@ async def handle_callback(update: dict):
         results = await post_content(content, brand)
         platform_count = sum(1 for k, v in results.items() if k != "drive_saved" and "error" not in str(v))
         total_platforms = sum(1 for k in results if k != "drive_saved")
-        drive_line = "\n📁 Saved to Mark Marketing" if results.get("drive_saved") else "\n⚠️ Drive save failed"
+        drive_line = ""
         await send_telegram(f"✅ *Approved — {BRANDS[brand]['name']}*\n{platform_count}/{total_platforms} platforms posted{drive_line}")
 
     elif action == "post_now":
@@ -2229,7 +2041,7 @@ async def handle_callback(update: dict):
         results = await post_content(content, brand)
         platform_count = sum(1 for k, v in results.items() if k != "drive_saved" and "error" not in str(v))
         total_platforms = sum(1 for k in results if k != "drive_saved")
-        drive_line = "\n📁 Saved to Mark Marketing" if results.get("drive_saved") else "\n⚠️ Drive save failed"
+        drive_line = ""
         await send_telegram(f"✅ *Posted — {BRANDS[brand]['name']}*\n{platform_count}/{total_platforms} platforms posted{drive_line}")
 
     elif action == "schedule_6pm":
@@ -2254,7 +2066,7 @@ async def handle_callback(update: dict):
             results = await post_content(content, brand)
             platform_count = sum(1 for k, v in results.items() if k != "drive_saved" and "error" not in str(v))
             total_platforms = sum(1 for k in results if k != "drive_saved")
-            drive_line = "\n📁 Saved to Mark Marketing" if results.get("drive_saved") else "\n⚠️ Drive save failed"
+            drive_line = ""
             await send_telegram(f"✅ *6pm post live — {BRANDS[brand]['name']}*\n{platform_count}/{total_platforms} platforms posted{drive_line}")
 
         asyncio.create_task(_delayed_post())
