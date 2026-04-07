@@ -200,7 +200,29 @@ _temp_images: dict = {}        # image_id → bytes (temporary image hosting for
 pending_batches: dict = {}     # batch_id → list[content_dict]
 last_batch: dict = {}          # brand → list[content_dict]
 li_oauth_states: dict = {}     # state → brand (for OAuth flow)
-posting_log: list = []         # [{brand, platforms, topic, timestamp, success}] — persists per deploy
+POSTING_LOG_FILE = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "mark_posting_log.json")
+
+def _load_posting_log() -> list:
+    """Load posting log from persistent storage — survives Railway redeploys if volume attached."""
+    try:
+        with open(POSTING_LOG_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+    except Exception as e:
+        log.warning(f"Could not load posting log from {POSTING_LOG_FILE}: {e}")
+        return []
+
+def _save_posting_log():
+    """Persist posting log to file."""
+    try:
+        os.makedirs(os.path.dirname(POSTING_LOG_FILE), exist_ok=True)
+        with open(POSTING_LOG_FILE, "w") as f:
+            json.dump(posting_log, f)
+    except Exception as e:
+        log.error(f"Failed to save posting log: {e}")
+
+posting_log: list = _load_posting_log()
 
 app = FastAPI()
 
@@ -1771,6 +1793,7 @@ async def post_content(content: dict, brand: str) -> dict:
         "drive_saved": results.get("drive_saved", False),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
+    _save_posting_log()
 
     log.info(f"Post results for {brand}: {results}")
     return results
