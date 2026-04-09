@@ -2263,7 +2263,20 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
     # Render images and send as photos so GG can see what he's approving
     await send_telegram(f"_Rendering slides..._")
     rendered_images = []
-    if content_type == "carousel":
+    if content_type == "reels" and "script" in content and "slides" not in content:
+        # Convert reel script beats into slides for visual preview
+        script = content["script"]
+        fake_slides = [
+            {"slide": 1, "headline": script.get("hook", ""), "subtext": "REEL HOOK", "photo_direction": "cinematic Dubai"},
+        ]
+        for j, beat in enumerate(script.get("body", []), start=2):
+            fake_slides.append({"slide": j, "headline": beat, "subtext": "", "photo_direction": "cinematic Dubai"})
+        cta = script.get("cta", "")
+        if cta:
+            fake_slides.append({"slide": len(fake_slides) + 1, "headline": cta, "cta_line": cta})
+        content["slides"] = fake_slides
+        rendered_images = await render_carousel_images(content, brand)
+    elif content_type == "carousel":
         rendered_images = await render_carousel_images(content, brand)
     elif content_type in ("static", "story"):
         img = await render_static_image(content, brand)
@@ -2278,7 +2291,10 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
     # Cache rendered images so we don't re-render on approval
     content["_rendered_images_b64"] = [base64.b64encode(img).decode() for img in rendered_images]
     # Show caption + POST NOW / POST 6PM buttons
-    cap = content.get("caption_instagram", "")[:300]
+    cap = content.get("caption_instagram", "")
+    tags = " ".join(content.get("hashtags", []))
+    if tags:
+        cap = f"{cap}\n\n{tags}"
     # Sanitize markdown characters that break Telegram
     safe_cap = cap.replace("*", "").replace("_", "").replace("`", "").replace("[", "").replace("]", "")
     brand_name = BRANDS[brand]["name"]
