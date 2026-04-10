@@ -300,7 +300,7 @@ For static use one slide only.
 
 # ── CLAUDE ────────────────────────────────────────────────────────────────────
 
-async def call_claude(prompt: str, pdf_b64: str = None) -> str:
+async def call_claude(prompt: str, pdf_b64: str = None, max_retries: int = 3) -> str:
     content = []
     if pdf_b64:
         content.append({"type": "document", "source": {
@@ -308,33 +308,52 @@ async def call_claude(prompt: str, pdf_b64: str = None) -> str:
         }})
     content.append({"type": "text", "text": prompt})
     log.info(f"[call_claude] Sending prompt ({len(prompt)} chars): {prompt[:300]}...")
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": CLAUDE_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 2048,
-                    "system": MARK_SYSTEM_PROMPT,
-                    "messages": [{"role": "user", "content": content}],
-                },
-            )
-        log.info(f"[call_claude] HTTP status: {r.status_code}")
-        resp_json = r.json()
-        if "content" not in resp_json:
-            log.error(f"[call_claude] Claude API error response: {json.dumps(resp_json, indent=2)}")
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                r = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": CLAUDE_API_KEY,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": "claude-sonnet-4-20250514",
+                        "max_tokens": 2048,
+                        "system": MARK_SYSTEM_PROMPT,
+                        "messages": [{"role": "user", "content": content}],
+                    },
+                )
+            log.info(f"[call_claude] HTTP status: {r.status_code} (attempt {attempt+1}/{max_retries})")
+            if r.status_code in (429, 529, 500, 502, 503, 504):
+                if attempt < max_retries - 1:
+                    wait = 5 * (attempt + 1)
+                    log.warning(f"[call_claude] Retryable error {r.status_code}, waiting {wait}s...")
+                    await asyncio.sleep(wait)
+                    continue
+                log.error(f"[call_claude] All {max_retries} attempts failed with {r.status_code}")
+                return None
+            resp_json = r.json()
+            if "content" not in resp_json:
+                log.error(f"[call_claude] Claude API error response: {json.dumps(resp_json, indent=2)}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(5)
+                    continue
+                return None
+            raw_text = resp_json["content"][0]["text"]
+            log.info(f"[call_claude] Raw response ({len(raw_text)} chars): {raw_text[:500]}...")
+            return raw_text
+        except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
+            log.warning(f"[call_claude] Network error attempt {attempt+1}/{max_retries}: {type(e).__name__}: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(5)
+                continue
             return None
-        raw_text = resp_json["content"][0]["text"]
-        log.info(f"[call_claude] Raw response ({len(raw_text)} chars): {raw_text[:500]}...")
-        return raw_text
-    except Exception as e:
-        log.error(f"[call_claude] Exception calling Claude API: {type(e).__name__}: {e}")
-        return None
+        except Exception as e:
+            log.error(f"[call_claude] Exception calling Claude API: {type(e).__name__}: {e}")
+            return None
+    return None
 
 
 def parse_json(raw: str) -> dict | None:
@@ -387,10 +406,9 @@ async def generate_single(brand: str, content_type: str, topic: str = "", pdf_b6
         return None
 
     async def _call_with_images(prompt: str, ref_images: list[str], extra_b64: str = None) -> str:
-        """Call Claude with optional reference images and/or a PDF."""
+        """Call Claude with optional reference images and/or a PDF. Retries on 429/529."""
         content_parts = []
         for img_b64 in ref_images:
-            # Detect image type from header bytes
             import base64 as _b64
             raw = _b64.b64decode(img_b64[:32])
             mime = "image/png" if raw[:4] == b'\x89PNG' else "image/jpeg"
@@ -404,29 +422,45 @@ async def generate_single(brand: str, content_type: str, topic: str = "", pdf_b6
                 "source": {"type": "base64", "media_type": "application/pdf", "data": extra_b64}
             })
         content_parts.append({"type": "text", "text": prompt})
-        async with httpx.AsyncClient(timeout=60) as client:
-            r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": CLAUDE_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 2048,
-                    "system": MARK_SYSTEM_PROMPT,
-                    "messages": [{"role": "user", "content": content_parts}],
-                },
-            )
-        log.info(f"[_call_with_images] HTTP status: {r.status_code}")
-        resp_json = r.json()
-        if "content" not in resp_json:
-            log.error(f"[_call_with_images] Claude API error: {json.dumps(resp_json, indent=2)}")
-            return None
-        raw_text = resp_json["content"][0]["text"]
-        log.info(f"[_call_with_images] Raw response ({len(raw_text)} chars): {raw_text[:500]}...")
-        return raw_text
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=60) as client:
+                    r = await client.post(
+                        "https://api.anthropic.com/v1/messages",
+                        headers={
+                            "x-api-key": CLAUDE_API_KEY,
+                            "anthropic-version": "2023-06-01",
+                            "content-type": "application/json",
+                        },
+                        json={
+                            "model": "claude-sonnet-4-20250514",
+                            "max_tokens": 2048,
+                            "system": MARK_SYSTEM_PROMPT,
+                            "messages": [{"role": "user", "content": content_parts}],
+                        },
+                    )
+                log.info(f"[_call_with_images] HTTP status: {r.status_code} (attempt {attempt+1}/3)")
+                if r.status_code in (429, 529, 500, 502, 503, 504):
+                    if attempt < 2:
+                        wait = 5 * (attempt + 1)
+                        log.warning(f"[_call_with_images] Retryable {r.status_code}, waiting {wait}s...")
+                        await asyncio.sleep(wait)
+                        continue
+                    return None
+                resp_json = r.json()
+                if "content" not in resp_json:
+                    log.error(f"[_call_with_images] Claude API error: {json.dumps(resp_json, indent=2)}")
+                    return None
+                raw_text = resp_json["content"][0]["text"]
+                log.info(f"[_call_with_images] Raw response ({len(raw_text)} chars): {raw_text[:500]}...")
+                return raw_text
+            except (httpx.ReadTimeout, httpx.ConnectTimeout) as e:
+                log.warning(f"[_call_with_images] Timeout attempt {attempt+1}/3: {e}")
+                if attempt < 2:
+                    await asyncio.sleep(5)
+                    continue
+                return None
+        return None
 
     if pdf_b64:
         # PDF brochure post
@@ -445,29 +479,51 @@ Use accurate verifiable Dubai real estate data. Return JSON only."""
 
     if not raw:
         log.error(f"[generate_single] Claude returned no content for {brand}/{content_type} topic='{topic}'")
+        # Fallback chain: reels→carousel→static
+        if content_type in ("reels", "carousel"):
+            fallback_type = "carousel" if content_type == "reels" else "static"
+            log.warning(f"[generate_single] {content_type} failed (no response), trying {fallback_type}")
+            fb_prompt = f"""Create a {fallback_type} post for {cfg['name']}.
+Topic: {topic}
+Tone: {cfg['tone']} | CTA: {cfg['cta']} | Handle: {cfg['handle']} | Website: {cfg['website']}
+Use accurate verifiable Dubai real estate data. Return JSON only."""
+            fb_raw = await call_claude(fb_prompt)
+            if fb_raw:
+                fb_result = parse_json(fb_raw)
+                if fb_result:
+                    fb_result["_topic"] = topic
+                    fb_result["_brand"] = brand
+                    fb_result["_content_type"] = fallback_type
+                    fb_result["_fallback_from"] = content_type
+                    log.info(f"[generate_single] Fallback {fallback_type} succeeded for {brand}")
+                    return fb_result
         return None
     log.info(f"[generate_single] Got raw response for {brand}/{content_type}, parsing JSON...")
     result = parse_json(raw)
     if not result:
         log.error(f"[generate_single] JSON parse failed for {brand}/{content_type}. Raw response: {raw[:1000]}")
-        # STEP 4: Fallback — if reels fails, retry as carousel
+        # Fallback chain on parse failure: reels→carousel→static
+        fallback_types = []
         if content_type == "reels":
-            log.warning(f"[generate_single] Reels failed for {brand}, falling back to carousel")
-            fallback_prompt = f"""Create a carousel post for {cfg['name']}.
+            fallback_types = ["carousel", "static"]
+        elif content_type == "carousel":
+            fallback_types = ["static"]
+        for fb_type in fallback_types:
+            log.warning(f"[generate_single] {content_type} parse failed for {brand}, trying {fb_type}")
+            fb_prompt = f"""Create a {fb_type} post for {cfg['name']}.
 Topic: {topic}
 Tone: {cfg['tone']} | CTA: {cfg['cta']} | Handle: {cfg['handle']} | Website: {cfg['website']}
 Use accurate verifiable Dubai real estate data. Return JSON only."""
-            fallback_raw = await call_claude(fallback_prompt)
-            if fallback_raw:
-                result = parse_json(fallback_raw)
-                if result:
-                    result["_topic"] = topic
-                    result["_brand"] = brand
-                    result["_content_type"] = "carousel"
-                    result["_fallback_from"] = "reels"
-                    log.info(f"[generate_single] Fallback carousel succeeded for {brand}")
-                    return result
-            log.error(f"[generate_single] Fallback carousel also failed for {brand}")
+            fb_raw = await call_claude(fb_prompt)
+            if fb_raw:
+                fb_result = parse_json(fb_raw)
+                if fb_result:
+                    fb_result["_topic"] = topic
+                    fb_result["_brand"] = brand
+                    fb_result["_content_type"] = fb_type
+                    fb_result["_fallback_from"] = content_type
+                    log.info(f"[generate_single] Fallback {fb_type} succeeded for {brand}")
+                    return fb_result
         return None
     # Validate reels has required 'script' field
     if content_type == "reels" and "script" not in result:
