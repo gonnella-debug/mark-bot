@@ -307,39 +307,76 @@ async def call_claude(prompt: str, pdf_b64: str = None) -> str:
             "type": "base64", "media_type": "application/pdf", "data": pdf_b64
         }})
     content.append({"type": "text", "text": prompt})
-    async with httpx.AsyncClient(timeout=60) as client:
-        r = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": CLAUDE_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 2048,
-                "system": MARK_SYSTEM_PROMPT,
-                "messages": [{"role": "user", "content": content}],
-            },
-        )
-    resp_json = r.json()
-    if "content" not in resp_json:
-        log.error(f"Claude API error: {resp_json.get('error', resp_json)}")
+    log.info(f"[call_claude] Sending prompt ({len(prompt)} chars): {prompt[:300]}...")
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": CLAUDE_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 2048,
+                    "system": MARK_SYSTEM_PROMPT,
+                    "messages": [{"role": "user", "content": content}],
+                },
+            )
+        log.info(f"[call_claude] HTTP status: {r.status_code}")
+        resp_json = r.json()
+        if "content" not in resp_json:
+            log.error(f"[call_claude] Claude API error response: {json.dumps(resp_json, indent=2)}")
+            return None
+        raw_text = resp_json["content"][0]["text"]
+        log.info(f"[call_claude] Raw response ({len(raw_text)} chars): {raw_text[:500]}...")
+        return raw_text
+    except Exception as e:
+        log.error(f"[call_claude] Exception calling Claude API: {type(e).__name__}: {e}")
         return None
-    return resp_json["content"][0]["text"]
 
 
 def parse_json(raw: str) -> dict | None:
+    if not raw:
+        log.error("[parse_json] Received empty/None input")
+        return None
+
+    # Step 1: Strip markdown code fences and whitespace
+    cleaned = re.sub(r'```(?:json)?\s*', '', raw).strip()
+    cleaned = cleaned.rstrip('`').strip()
+    log.info(f"[parse_json] Attempting to parse ({len(cleaned)} chars): {cleaned[:300]}...")
+
+    # Step 2: Try direct parse of cleaned text
+    try:
+        result = json.loads(cleaned)
+        log.info("[parse_json] Direct parse succeeded")
+        return result
+    except json.JSONDecodeError as e:
+        log.warning(f"[parse_json] Direct parse failed: {e}")
+
+    # Step 3: Try extracting JSON between first { and last }
+    try:
+        first_brace = cleaned.index('{')
+        last_brace = cleaned.rindex('}')
+        json_str = cleaned[first_brace:last_brace + 1]
+        result = json.loads(json_str)
+        log.info("[parse_json] Brace extraction parse succeeded")
+        return result
+    except (ValueError, json.JSONDecodeError) as e:
+        log.error(f"[parse_json] Brace extraction failed: {e}")
+
+    # Step 4: Try regex match as last resort
     try:
         m = re.search(r'\{[\s\S]*\}', raw)
         if m:
-            return json.loads(m.group())
-    except Exception:
-        pass
-    try:
-        return json.loads(re.sub(r'```(?:json)?', '', raw).strip())
-    except Exception as e:
-        log.error(f"JSON parse failed: {e}")
+            result = json.loads(m.group())
+            log.info("[parse_json] Regex extraction parse succeeded")
+            return result
+    except json.JSONDecodeError as e:
+        log.error(f"[parse_json] Regex extraction failed: {e}")
+
+    log.error(f"[parse_json] All parse attempts failed. Raw input: {raw[:500]}")
     return None
 
 
@@ -382,11 +419,14 @@ async def generate_single(brand: str, content_type: str, topic: str = "", pdf_b6
                     "messages": [{"role": "user", "content": content_parts}],
                 },
             )
+        log.info(f"[_call_with_images] HTTP status: {r.status_code}")
         resp_json = r.json()
         if "content" not in resp_json:
-            log.error(f"Claude API error: {resp_json.get('error', resp_json)}")
+            log.error(f"[_call_with_images] Claude API error: {json.dumps(resp_json, indent=2)}")
             return None
-        return resp_json["content"][0]["text"]
+        raw_text = resp_json["content"][0]["text"]
+        log.info(f"[_call_with_images] Raw response ({len(raw_text)} chars): {raw_text[:500]}...")
+        return raw_text
 
     if pdf_b64:
         # PDF brochure post
@@ -404,13 +444,45 @@ Use accurate verifiable Dubai real estate data. Return JSON only."""
         raw = await call_claude(prompt)
 
     if not raw:
-        log.error(f"Claude returned no content for {brand}")
+        log.error(f"[generate_single] Claude returned no content for {brand}/{content_type} topic='{topic}'")
         return None
+    log.info(f"[generate_single] Got raw response for {brand}/{content_type}, parsing JSON...")
     result = parse_json(raw)
-    if result:
-        result["_topic"] = topic
-        result["_brand"] = brand
-        result["_content_type"] = content_type
+    if not result:
+        log.error(f"[generate_single] JSON parse failed for {brand}/{content_type}. Raw response: {raw[:1000]}")
+        # STEP 4: Fallback — if reels fails, retry as carousel
+        if content_type == "reels":
+            log.warning(f"[generate_single] Reels failed for {brand}, falling back to carousel")
+            fallback_prompt = f"""Create a carousel post for {cfg['name']}.
+Topic: {topic}
+Tone: {cfg['tone']} | CTA: {cfg['cta']} | Handle: {cfg['handle']} | Website: {cfg['website']}
+Use accurate verifiable Dubai real estate data. Return JSON only."""
+            fallback_raw = await call_claude(fallback_prompt)
+            if fallback_raw:
+                result = parse_json(fallback_raw)
+                if result:
+                    result["_topic"] = topic
+                    result["_brand"] = brand
+                    result["_content_type"] = "carousel"
+                    result["_fallback_from"] = "reels"
+                    log.info(f"[generate_single] Fallback carousel succeeded for {brand}")
+                    return result
+            log.error(f"[generate_single] Fallback carousel also failed for {brand}")
+        return None
+    # Validate reels has required 'script' field
+    if content_type == "reels" and "script" not in result:
+        log.warning(f"[generate_single] Reels response missing 'script' field for {brand}. Keys: {list(result.keys())}")
+        # If Claude returned carousel format instead, use it
+        if "slides" in result:
+            log.info(f"[generate_single] Reels response has 'slides' — treating as carousel fallback")
+            result["_content_type"] = "carousel"
+            result["_fallback_from"] = "reels"
+        else:
+            log.error(f"[generate_single] Reels response has neither 'script' nor 'slides' for {brand}")
+            return None
+    result["_topic"] = topic
+    result["_brand"] = brand
+    result["_content_type"] = content_type if "_content_type" not in result else result["_content_type"]
     return result
 
 
@@ -2256,8 +2328,11 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
     await send_telegram(f"_Generating {BRANDS[brand]['name']} {content_type}..._")
     content = await generate_single(brand, content_type, topic)
     if not content:
-        await send_telegram(f"⚠️ Mark failed to generate content for {brand}")
+        await send_telegram(f"⚠️ Mark failed to generate content for {brand}/{content_type} — check Railway logs for details")
         return
+    if content.get("_fallback_from") == "reels":
+        await send_telegram(f"⚠️ Reels generation failed for {BRANDS[brand]['name']} — fell back to carousel successfully")
+        content_type = "carousel"  # Update for rendering
     if breaking:
         content["_breaking"] = True
     # Render images and send as photos so GG can see what he's approving
