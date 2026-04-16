@@ -72,6 +72,13 @@ GDRIVE_API_KEY        = os.getenv("GDRIVE_API_KEY")
 GDRIVE_FOLDER_ID        = "1QoloKwEVPojBMfkTcSkbRL1ryo0a8jif"
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 
+# Mark Marketing brand subfolders in Google Drive (for saving rendered content)
+GDRIVE_MARKETING_BRAND_FOLDERS = {
+    "nucassa_re": "1h9-rHbwy_u781I5JK9AfC9Ig4UGgJ9lV",
+    "nucassa_holdings": "1jZXVpp4zxKD4my1CU2NBEerlH81iNpJ2",
+    "listr": "1DTSCTvgN_nMR9Wn71vzGHphF8QKXfZbM",
+}
+
 # Instagram Account IDs (from Meta Business Manager)
 IG_NUCASSA_RE       = "17841457839005074"   # @nucassadubai
 IG_HOLDINGS         = "17841406888818689"   # @nucassaholdings_ltd
@@ -2028,9 +2035,67 @@ async def _get_drive_upload_token() -> str | None:
 
 
 async def save_to_drive(brand: str, images: list[bytes], caption: str, content_type: str = "carousel") -> bool:
-    """Stub — Drive save disabled. Mark only reads from Sarah's Projects folder."""
-    log.info(f"Drive save skipped for {brand} (disabled)")
-    return False
+    """Save rendered images + caption to the brand's Mark Marketing subfolder."""
+    token = await _get_drive_upload_token()
+    if not token:
+        return False
+    folder_id = GDRIVE_MARKETING_BRAND_FOLDERS.get(brand)
+    if not folder_id:
+        log.error(f"No Drive folder mapped for brand: {brand}")
+        return False
+    brand_name = BRANDS[brand]["name"]
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M")
+    saved = 0
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient(timeout=30) as client:
+        for i, img_bytes in enumerate(images):
+            fname = f"{brand_name} — {content_type} — {ts} — slide{i+1}.png"
+            metadata = json.dumps({"name": fname, "parents": [folder_id]})
+            boundary = "mark_upload_boundary"
+            body = (
+                f"--{boundary}\r\n"
+                f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                f"{metadata}\r\n"
+                f"--{boundary}\r\n"
+                f"Content-Type: image/png\r\n\r\n"
+            ).encode() + img_bytes + f"\r\n--{boundary}--\r\n".encode()
+            try:
+                r = await client.post(
+                    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
+                    headers={**headers, "Content-Type": f"multipart/related; boundary={boundary}"},
+                    content=body,
+                )
+                if r.status_code in (200, 201):
+                    saved += 1
+                else:
+                    log.error(f"Drive upload failed ({r.status_code}): {r.text[:200]}")
+            except Exception as e:
+                log.error(f"Drive upload error: {e}")
+        # Save caption as text file
+        cap_fname = f"{brand_name} — {content_type} — {ts} — caption.txt"
+        cap_meta = json.dumps({"name": cap_fname, "parents": [folder_id]})
+        cap_boundary = "mark_cap_boundary"
+        cap_body = (
+            f"--{cap_boundary}\r\n"
+            f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+            f"{cap_meta}\r\n"
+            f"--{cap_boundary}\r\n"
+            f"Content-Type: text/plain; charset=UTF-8\r\n\r\n"
+            f"{caption}\r\n"
+            f"--{cap_boundary}--\r\n"
+        ).encode()
+        try:
+            r = await client.post(
+                "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+                headers={**headers, "Content-Type": f"multipart/related; boundary={cap_boundary}"},
+                content=cap_body,
+            )
+            if r.status_code in (200, 201):
+                saved += 1
+        except Exception as e:
+            log.error(f"Drive caption upload error: {e}")
+    log.info(f"Saved {saved} files to Drive for {brand_name}")
+    return saved > 0
 
 
 # ── TELEGRAM ──────────────────────────────────────────────────────────────────
