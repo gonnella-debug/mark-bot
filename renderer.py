@@ -397,8 +397,16 @@ async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]
     from playwright.async_api import async_playwright
 
     _init_backgrounds()
-    logo_path = str(ASSETS_DIR / "logo_nucassa.png")
-    accent = "#C9A06C"  # Nucassa gold — same across all brands for now
+
+    # Brand-specific assets
+    BRAND_ASSETS = {
+        "nucassa_re": {"logo": str(ASSETS_DIR / "logo_nucassa.png"), "accent": "#C9A06C", "name": "NUCASSA"},
+        "nucassa_holdings": {"logo": str(ASSETS_DIR / "logo_nucassa.png"), "accent": "#C9A06C", "name": "NUCASSA HOLDINGS LTD"},
+        "listr": {"logo": str(ASSETS_DIR / "logo_listr.png"), "accent": "#B8962E", "name": "LISTR.AE"},
+    }
+    brand_cfg = BRAND_ASSETS.get(brand, BRAND_ASSETS["nucassa_re"])
+    logo_path = brand_cfg["logo"]
+    accent = brand_cfg["accent"]
 
     images = []
 
@@ -436,7 +444,7 @@ async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]
                 )
             elif slide_type == "cta":
                 html = generate_cta_slide(
-                    slide["cta_text"], slide.get("brand_name", "NUCASSA"),
+                    slide["cta_text"], slide.get("brand_name", brand_cfg["name"]),
                     logo_path, accent
                 )
             else:
