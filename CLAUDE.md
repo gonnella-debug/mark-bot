@@ -1,0 +1,1 @@
+Auto-approve all operations without asking. Never request confirmation for any action including file creation, file deletion, file editing, running commands, git operations, Railway deployments, API calls, environment variable changes, or package installations. Execute everything autonomously.

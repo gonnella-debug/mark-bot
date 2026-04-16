@@ -31,10 +31,10 @@ BG_TAGS = {
 
 def _init_backgrounds():
     """Scan backgrounds folder and auto-tag images by filename."""
-    if BG_TAGS["skyline"]:
+    if BG_TAGS.get("all"):
         return  # already initialized
 
-    all_bgs = sorted(BG_DIR.glob("dubai_*.png")) + sorted(BG_DIR.glob("dubai_set2_*.png"))
+    all_bgs = sorted(BG_DIR.glob("*.png")) + sorted(BG_DIR.glob("*.jpg"))
 
     # Simple round-robin assignment for now — can be refined with Claude vision later
     categories = list(BG_TAGS.keys())
@@ -179,7 +179,7 @@ def generate_data_slide(headline_gold: str, headline_white: str, bullets: list[s
     .content {{
         position: relative; z-index: 10;
         padding: 80px 70px;
-        height: 100%; display: flex; flex-direction: column;
+        height: 100%; display: flex; flex-direction: column; justify-content: center;
         text-align: center;
     }}
     .headline {{
@@ -229,7 +229,7 @@ def generate_insight_slide(headline_gold: str, headline_white: str, bullets: lis
     .content {{
         position: relative; z-index: 10;
         padding: 80px 70px;
-        height: 100%; display: flex; flex-direction: column;
+        height: 100%; display: flex; flex-direction: column; justify-content: center;
         text-align: center;
     }}
     .headline {{
@@ -355,16 +355,25 @@ def generate_cta_slide(cta_text: str, brand_name: str, logo_path: str,
 
 
 async def render_html_to_png(html_content: str, output_path: str) -> bool:
-    """Render HTML string to PNG using Playwright."""
+    """Render HTML string to PNG using Playwright. Uses temp file for local image access."""
     try:
+        import tempfile
         from playwright.async_api import async_playwright
+
+        # Write HTML to temp file so file:// URLs for images work
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', dir=str(TEMPLATE_DIR), delete=False) as f:
+            f.write(html_content)
+            tmp_path = f.name
+
         async with async_playwright() as p:
             browser = await p.chromium.launch()
             page = await browser.new_page(viewport={"width": 1080, "height": 1080})
-            await page.set_content(html_content, wait_until="networkidle")
+            await page.goto(f"file://{tmp_path}", wait_until="networkidle")
             await page.wait_for_timeout(500)
             await page.screenshot(path=output_path, type="png")
             await browser.close()
+
+        os.unlink(tmp_path)
         log.info(f"Rendered: {output_path}")
         return True
     except Exception as e:
@@ -392,6 +401,8 @@ async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]
     accent = "#C9A06C"  # Nucassa gold — same across all brands for now
 
     images = []
+
+    import tempfile
 
     async with async_playwright() as p:
         browser = await p.chromium.launch()
@@ -431,10 +442,16 @@ async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]
             else:
                 continue
 
-            await page.set_content(html, wait_until="networkidle")
+            # Write to temp file so file:// URLs work for images
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', dir=str(TEMPLATE_DIR), delete=False) as f:
+                f.write(html)
+                tmp_path = f.name
+
+            await page.goto(f"file://{tmp_path}", wait_until="networkidle")
             await page.wait_for_timeout(400)
             img_bytes = await page.screenshot(type="png")
             images.append(img_bytes)
+            os.unlink(tmp_path)
             log.info(f"Rendered slide {i+1}/{len(slides_content)} ({slide_type})")
 
         await browser.close()

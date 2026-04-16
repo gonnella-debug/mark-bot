@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1080px;
+    height: 1350px;
+    overflow: hidden;
+    font-family: 'Montserrat', sans-serif;
+    background: #0a0a0a;
+  }
+
+  .slide {
+    width: 1080px;
+    height: 1350px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stripe-bg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: repeating-linear-gradient(
+      -35deg,
+      transparent,
+      transparent 80px,
+      rgba(255,255,255,0.02) 80px,
+      rgba(255,255,255,0.02) 82px
+    );
+  }
+
+  .light-streak {
+    position: absolute;
+    top: -20%; right: -10%;
+    width: 60%; height: 140%;
+    background: linear-gradient(-35deg, transparent 0%, rgba(255,255,255,0.015) 45%, rgba(255,255,255,0.04) 50%, rgba(255,255,255,0.015) 55%, transparent 100%);
+  }
+
+  .light-streak-2 {
+    position: absolute;
+    top: -20%; right: 15%;
+    width: 40%; height: 140%;
+    background: linear-gradient(-35deg, transparent 0%, rgba(255,255,255,0.01) 45%, rgba(255,255,255,0.025) 50%, rgba(255,255,255,0.01) 55%, transparent 100%);
+  }
+
+  .content {
+    position: relative;
+    z-index: 10;
+    padding: 100px 75px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .headline {
+    font-size: 44px;
+    font-weight: 900;
+    color: #C9A06C;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    line-height: 1.15;
+    margin-bottom: 50px;
+    font-style: italic;
+  }
+
+  .check-section {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+    margin-bottom: 60px;
+  }
+
+  .check-row {
+    text-align: center;
+  }
+
+  .check-icon-inline {
+    width: 36px;
+    height: 36px;
+    border: 2px solid rgba(255,255,255,0.6);
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
+  }
+
+  .check-icon-inline svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: rgba(255,255,255,0.8);
+    stroke-width: 2.5;
+  }
+
+  .check-row-text {
+    font-size: 28px;
+    font-weight: 700;
+    color: #ffffff;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    line-height: 1.4;
+  }
+
+  .divider {
+    width: 200px;
+    height: 2px;
+    background: linear-gradient(to right, transparent, #C9A06C, transparent);
+    margin: 10px auto 50px;
+  }
+
+  .compare-title {
+    font-size: 38px;
+    font-weight: 900;
+    color: #C9A06C;
+    text-transform: uppercase;
+    text-align: center;
+    margin-bottom: 35px;
+    font-style: italic;
+  }
+
+  .compare-item {
+    text-align: center;
+    margin-bottom: 30px;
+  }
+
+  .compare-city {
+    font-size: 26px;
+    font-weight: 800;
+    color: #C9A06C;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+
+  .compare-desc {
+    font-size: 22px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.7);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+
+  .logo-bottom {
+    position: absolute;
+    bottom: 55px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 75px;
+    opacity: 0.6;
+  }
+</style>
+</head>
+<body>
+<div class="slide">
+  <div class="stripe-bg"></div>
+  <div class="light-streak"></div>
+  <div class="light-streak-2"></div>
+  <div class="content">
+    <div class="headline">TAX EFFICIENCY = CAPITAL PRESERVATION</div>
+
+    <div class="check-section">
+      <div class="check-row">
+        <div class="check-icon-inline"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div>
+        <div class="check-row-text">0% PERSONAL INCOME TAX,<br>NO CAPITAL GAINS, NO INHERITANCE TAX</div>
+      </div>
+      <div class="check-row">
+        <div class="check-icon-inline"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div>
+        <div class="check-row-text">FREE ZONES LIKE DIFC & ADGM OFFER<br>0% CORPORATE TAX ON QUALIFYING INCOME</div>
+      </div>
+      <div class="check-row">
+        <div class="check-icon-inline"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div>
+        <div class="check-row-text">NO WITHHOLDING TAXES + EASY PROFIT REPATRIATION</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="compare-title">COMPARED TO:</div>
+
+    <div class="compare-item">
+      <div class="compare-city">LONDON</div>
+      <div class="compare-desc">HIGH PERSONAL + INHERITANCE TAXES</div>
+    </div>
+
+    <div class="compare-item">
+      <div class="compare-city">SINGAPORE</div>
+      <div class="compare-desc">TAX EXEMPTIONS EXIST, BUT REQUIRE STRICT<br>CONDITIONS & SUBSTANCE</div>
+    </div>
+  </div>
+  <img class="logo-bottom" src="./assets/logo_nucassa.png" alt="">
+</div>
+</body>
+</html>

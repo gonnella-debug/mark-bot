@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1080px;
+    height: 1350px;
+    overflow: hidden;
+    font-family: 'Montserrat', sans-serif;
+    background: #0a0a0a;
+  }
+
+  .slide {
+    width: 1080px;
+    height: 1350px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Diagonal stripe texture */
+  .stripe-bg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: repeating-linear-gradient(
+      -35deg,
+      transparent,
+      transparent 80px,
+      rgba(255,255,255,0.02) 80px,
+      rgba(255,255,255,0.02) 82px
+    );
+  }
+
+  /* Subtle light streaks */
+  .light-streak {
+    position: absolute;
+    top: -20%;
+    right: -10%;
+    width: 60%;
+    height: 140%;
+    background: linear-gradient(
+      -35deg,
+      transparent 0%,
+      rgba(255,255,255,0.015) 45%,
+      rgba(255,255,255,0.04) 50%,
+      rgba(255,255,255,0.015) 55%,
+      transparent 100%
+    );
+  }
+
+  .light-streak-2 {
+    position: absolute;
+    top: -20%;
+    right: 15%;
+    width: 40%;
+    height: 140%;
+    background: linear-gradient(
+      -35deg,
+      transparent 0%,
+      rgba(255,255,255,0.01) 45%,
+      rgba(255,255,255,0.025) 50%,
+      rgba(255,255,255,0.01) 55%,
+      transparent 100%
+    );
+  }
+
+  .content {
+    position: relative;
+    z-index: 10;
+    padding: 120px 80px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .headline {
+    font-size: 48px;
+    font-weight: 900;
+    color: #C9A06C;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    line-height: 1.15;
+    margin-bottom: 80px;
+    font-style: italic;
+  }
+
+  .checklist {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 50px;
+    flex: 1;
+  }
+
+  .check-item {
+    text-align: center;
+  }
+
+  .check-icon {
+    width: 44px;
+    height: 44px;
+    border: 2.5px solid rgba(255,255,255,0.7);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 18px;
+  }
+
+  .check-icon svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: rgba(255,255,255,0.9);
+    stroke-width: 2.5;
+  }
+
+  .check-text {
+    font-size: 42px;
+    font-weight: 800;
+    color: #ffffff;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+
+  .logo-bottom {
+    position: absolute;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80px;
+    opacity: 0.6;
+  }
+</style>
+</head>
+<body>
+<div class="slide">
+  <div class="stripe-bg"></div>
+  <div class="light-streak"></div>
+  <div class="light-streak-2"></div>
+  <div class="content">
+    <div class="headline">THEY'RE CHOOSING BASED ON:</div>
+    <div class="checklist">
+      <div class="check-item">
+        <div class="check-icon">
+          <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+        <div class="check-text">TAX CERTAINTY</div>
+      </div>
+      <div class="check-item">
+        <div class="check-icon">
+          <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+        <div class="check-text">STRUCTURING FLEXIBILITY</div>
+      </div>
+      <div class="check-item">
+        <div class="check-icon">
+          <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+        <div class="check-text">POLITICAL STABILITY</div>
+      </div>
+      <div class="check-item">
+        <div class="check-icon">
+          <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+        </div>
+        <div class="check-text">CAPITAL PROTECTION</div>
+      </div>
+    </div>
+  </div>
+  <img class="logo-bottom" src="./assets/logo_nucassa.png" alt="">
+</div>
+</body>
+</html>
