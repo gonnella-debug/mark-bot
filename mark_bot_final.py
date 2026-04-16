@@ -1,18 +1,19 @@
 """
-Mark — AI Marketing Bot (Final)
-Powered by Claude API | Pillow | Meta Graph API | LinkedIn API
-Google Drive PDF Reader | Telegram | FastAPI (Alex integration)
+Mark v2 — Autonomous AI Marketing Brain
+Powered by Claude API | Playwright | Meta Graph API | LinkedIn API
+Google Drive | Telegram | FastAPI
 
 Brands:
   - Nucassa Real Estate  → Instagram + Facebook + LinkedIn (@nucassadubai)
   - Nucassa Holdings     → Instagram + LinkedIn (@nucassaholdings_ltd)
-  - ListR.ae             → Instagram only (@listr.ae)
+  - ListR.ae             → Instagram + Facebook (@listr.ae)
 
 Architecture:
-  - GG never talks to Mark directly
-  - Alex orchestrates Mark via internal FastAPI endpoints
-  - Mark sends Telegram previews to GG for approval
-  - GG approves/rejects via Telegram inline buttons only
+  - GG talks to Mark directly on Telegram
+  - Mark autonomously searches news, creates content, renders carousels, publishes
+  - Alex is NOT involved in content — she only monitors system health
+  - Mark renders via HTML/CSS + Playwright (no more Pillow)
+  - Background image library: templates/backgrounds/
 """
 
 from __future__ import annotations
@@ -2662,8 +2663,8 @@ async def startup():
     if _missing:
         log.error(f"MISSING REQUIRED ENV VARS: {', '.join(_missing)} — Mark cannot start properly")
 
-    asyncio.create_task(telegram_listener())
+    # Mark v2 — autonomous mode, GG talks to Mark directly
+    from mark_v2_brain import mark_v2_listener
+    asyncio.create_task(mark_v2_listener())
     asyncio.create_task(linkedin_token_monitor())
-    # STEP 1: Build background image index from Sarah's Projects folder on startup
-    asyncio.create_task(_build_background_index())
-    log.info("Mark v4 — AI Marketing Bot — online (images: Google Drive)")
+    log.info("Mark v2 — Autonomous Marketing Brain — online")
