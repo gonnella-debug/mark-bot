@@ -319,10 +319,9 @@ async def handle_callback_v2(data: str, cb_id: str):
             if s["brand"] == brand:
                 _pending_suggestions[brand] = {"topic": s["topic"], "angle": s["angle"]}
                 markup = {"inline_keyboard": [
-                    [{"text": "✅ Approve", "callback_data": f"sug_approve|{brand}"},
-                     {"text": "🔄 Regenerate", "callback_data": f"sug_regen|{brand}"}],
                     [{"text": "📸 Static", "callback_data": f"sug_static|{brand}"},
                      {"text": "🎠 Carousel", "callback_data": f"sug_carousel|{brand}"}],
+                    [{"text": "🔄 Regenerate", "callback_data": f"sug_regen|{brand}"}],
                 ]}
                 brand_display = brand.replace("_", " ").title()
                 await send_tg(
@@ -464,8 +463,48 @@ async def mark_v2_listener():
             await asyncio.sleep(5)
 
 
+_chat_history = []  # recent messages for context
+
 async def _chat_with_mark(question: str):
-    """Answer questions about content or marketing."""
+    """Full conversation with Mark — understands feedback and acts on it."""
+    global _pending_render, _pending_suggestions
+
+    # Build context about current state
+    state_context = ""
+    if _pending_render:
+        state_context = f"\nYou have a pending render for {_pending_render['brand']} about: {_pending_render['content'].get('topic_summary', '?')}"
+    if _pending_suggestions:
+        brands = ", ".join(_pending_suggestions.keys())
+        state_context += f"\nYou have pending suggestions for: {brands}"
+
+    # Keep last 10 messages for context
+    _chat_history.append({"role": "user", "content": question})
+    if len(_chat_history) > 20:
+        _chat_history[:] = _chat_history[-20:]
+
+    system = f"""You are Mark, the autonomous marketing director for Nucassa (real estate + holdings) and ListR.ae in Dubai. You talk to GG directly on Telegram.
+
+You are NOT just a chatbot — you have real capabilities:
+- You create Instagram content (carousels and static posts)
+- You search real news for content ideas
+- You render professional slides
+- You post to Instagram, Facebook, and LinkedIn
+
+CURRENT STATE:{state_context}
+
+When GG gives you feedback about content (doesn't like the angle, wants different topic, wants changes):
+- Acknowledge it specifically
+- Tell him exactly what you'll do differently
+- If there's a pending render, offer to regenerate with his feedback
+- If he wants a specific topic, tell him to say "generate [brand] [topic]"
+
+When GG asks about marketing strategy, content ideas, or anything about the brands:
+- Give a direct, confident answer
+- Be specific with suggestions — not vague
+- Reference real Dubai market knowledge
+
+Keep responses SHORT — max 3-4 sentences. No essays. Talk like a human colleague, not a bot."""
+
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
@@ -476,15 +515,17 @@ async def _chat_with_mark(question: str):
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-haiku-4-5-20251001",
+                    "model": "claude-sonnet-4-20250514",
                     "max_tokens": 1024,
-                    "system": "You are Mark, marketing director for Nucassa (real estate + holdings) and ListR.ae in Dubai. Answer concisely about content strategy, marketing, social media. Under 200 words.",
-                    "messages": [{"role": "user", "content": question}],
+                    "system": system,
+                    "messages": _chat_history[-10:],
                 },
             )
             data = resp.json()
             text = data.get("content", [{}])[0].get("text", "")
             if text:
+                _chat_history.append({"role": "assistant", "content": text})
                 await send_tg(text)
     except Exception as e:
         log.error(f"Chat error: {e}")
+        await send_tg("Sorry, had a brain glitch. Try again.")
