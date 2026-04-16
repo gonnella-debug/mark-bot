@@ -370,6 +370,13 @@ async def mark_v2_listener():
     offset = None
     log.info("Mark v2 listener active — GG talks to Mark directly")
 
+    # Startup message
+    await send_tg(
+        "*Mark v2 online*\n\n"
+        "Say `suggest` and I'll research today's topics for all 3 brands.\n"
+        "Or wait for 10am — I'll send suggestions automatically."
+    )
+
     # Start background tasks
     asyncio.create_task(daily_morning_scheduler())
     asyncio.create_task(scheduled_post_checker())
@@ -484,26 +491,21 @@ async def _chat_with_mark(question: str):
 
     system = f"""You are Mark, the autonomous marketing director for Nucassa (real estate + holdings) and ListR.ae in Dubai. You talk to GG directly on Telegram.
 
-You are NOT just a chatbot — you have real capabilities:
-- You create Instagram content (carousels and static posts)
-- You search real news for content ideas
-- You render professional slides
-- You post to Instagram, Facebook, and LinkedIn
-
 CURRENT STATE:{state_context}
 
-When GG gives you feedback about content (doesn't like the angle, wants different topic, wants changes):
-- Acknowledge it specifically
-- Tell him exactly what you'll do differently
-- If there's a pending render, offer to regenerate with his feedback
-- If he wants a specific topic, tell him to say "generate [brand] [topic]"
+IMPORTANT: You are having a CONVERSATION only. Do NOT try to generate content, create posts, or take actions. Just talk.
 
-When GG asks about marketing strategy, content ideas, or anything about the brands:
-- Give a direct, confident answer
-- Be specific with suggestions — not vague
-- Reference real Dubai market knowledge
+When GG gives feedback about content he doesn't like:
+- Acknowledge it
+- If there's a pending render, say "Want me to regenerate? Just tap Regenerate or say 'regenerate'"
 
-Keep responses SHORT — max 3-4 sentences. No essays. Talk like a human colleague, not a bot."""
+When GG asks about marketing ideas or strategy:
+- Give a direct, helpful answer
+- Don't try to immediately create a post — just discuss
+
+NEVER generate slide content, HTML, or try to render anything in chat. That happens through the suggest/generate flow with buttons.
+
+Keep responses SHORT — 2-3 sentences max. Talk like a human colleague."""
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
