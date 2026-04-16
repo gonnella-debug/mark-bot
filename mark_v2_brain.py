@@ -289,8 +289,28 @@ async def handle_callback_v2(data: str, cb_id: str):
     parts = data.split("|")
     action = parts[0]
 
+    # Main menu buttons
+    if action == "v2_suggest":
+        await send_morning_suggestions()
+        return
+
+    elif action == "v2_status":
+        if not _posted_today:
+            markup = {"inline_keyboard": [
+                [{"text": "💡 Get Suggestions", "callback_data": "v2_suggest"}],
+            ]}
+            await send_tg("No posts today.", reply_markup=markup)
+        else:
+            lines = ["*Today's posts:*"]
+            for brand, topics in _posted_today.items():
+                lines.append(f"\n*{brand.replace('_', ' ').title()}:*")
+                for t in topics:
+                    lines.append(f"  • {t}")
+            await send_tg("\n".join(lines))
+        return
+
     # Suggestion buttons
-    if action == "sug_approve" or action == "sug_carousel":
+    elif action == "sug_approve" or action == "sug_carousel":
         brand = parts[1]
         sug = _pending_suggestions.get(brand)
         if sug:
@@ -370,12 +390,12 @@ async def mark_v2_listener():
     offset = None
     log.info("Mark v2 listener active — GG talks to Mark directly")
 
-    # Startup message
-    await send_tg(
-        "*Mark v2 online*\n\n"
-        "Say `suggest` and I'll research today's topics for all 3 brands.\n"
-        "Or wait for 10am — I'll send suggestions automatically."
-    )
+    # Startup message with buttons
+    markup = {"inline_keyboard": [
+        [{"text": "💡 Get Today's Suggestions", "callback_data": "v2_suggest"}],
+        [{"text": "📊 Status", "callback_data": "v2_status"}],
+    ]}
+    await send_tg("*Mark v2 online*", reply_markup=markup)
 
     # Start background tasks
     asyncio.create_task(daily_morning_scheduler())
@@ -400,7 +420,7 @@ async def mark_v2_listener():
                     cq = update["callback_query"]
                     data = cq.get("data", "")
                     cb_id = cq.get("id", "")
-                    if data.startswith("sug_") or data.startswith("render_"):
+                    if data.startswith("sug_") or data.startswith("render_") or data.startswith("v2_"):
                         await handle_callback_v2(data, cb_id)
                     else:
                         from mark_bot_final import handle_callback
