@@ -1680,27 +1680,67 @@ async def publish_ig_single(ig_account_id: str, image_bytes: bytes, caption: str
         return {"error": str(e)}
 
 
-async def publish_facebook(page_id: str, image_bytes: bytes, caption: str) -> dict:
-    """Post an image to a Facebook Page using page access token."""
-    page_token = await get_page_token(page_id)
-    if not page_token:
-        return {"error": "Could not get page token"}
-
+def _jpeg_bytes(image_bytes: bytes) -> bytes:
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=92)
-        jpeg_bytes = buf.getvalue()
+        return buf.getvalue()
     except Exception:
-        jpeg_bytes = image_bytes
+        return image_bytes
 
-    url = f"https://graph.facebook.com/v18.0/{page_id}/photos"
+
+async def publish_facebook(page_id: str, image_bytes: bytes, caption: str) -> dict:
+    """Post a single image to a Facebook Page."""
+    page_token = await get_page_token(page_id)
+    if not page_token:
+        return {"error": "Could not get page token"}
+    jpeg = _jpeg_bytes(image_bytes)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
-                url,
+                f"https://graph.facebook.com/v18.0/{page_id}/photos",
                 params={"access_token": page_token, "message": caption},
-                files={"source": ("post.jpg", jpeg_bytes, "image/jpeg")},
+                files={"source": ("post.jpg", jpeg, "image/jpeg")},
+            )
+            return r.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def publish_facebook_carousel(page_id: str, images_bytes_list: list, caption: str) -> dict:
+    """Post multi-photo carousel to a Facebook Page: upload each photo unpublished, then create a feed post attaching them in order."""
+    page_token = await get_page_token(page_id)
+    if not page_token:
+        return {"error": "Could not get page token"}
+    media_ids = []
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            for i, img_bytes in enumerate(images_bytes_list):
+                jpeg = _jpeg_bytes(img_bytes)
+                r = await client.post(
+                    f"https://graph.facebook.com/v18.0/{page_id}/photos",
+                    params={"access_token": page_token, "published": "false"},
+                    files={"source": (f"slide{i+1}.jpg", jpeg, "image/jpeg")},
+                )
+                d = r.json()
+                if "id" in d:
+                    media_ids.append(d["id"])
+                else:
+                    log.error(f"FB carousel slide {i+1} upload failed: {d}")
+            if not media_ids:
+                return {"error": "No FB carousel photos uploaded"}
+            if len(media_ids) < len(images_bytes_list):
+                log.warning(f"FB carousel: only {len(media_ids)}/{len(images_bytes_list)} photos uploaded — aborting to avoid partial post")
+                return {"error": f"Only {len(media_ids)}/{len(images_bytes_list)} photos uploaded — carousel aborted"}
+            attached = [{"media_fbid": mid} for mid in media_ids]
+            r = await client.post(
+                f"https://graph.facebook.com/v18.0/{page_id}/feed",
+                data={
+                    "access_token": page_token,
+                    "message": caption,
+                    "attached_media": json.dumps(attached),
+                },
             )
             return r.json()
     except Exception as e:
@@ -1891,7 +1931,7 @@ async def publish_linkedin(page_id: str, image_bytes: bytes, caption: str) -> di
 
 
 async def publish_linkedin_personal(account: str, image_bytes: bytes, caption: str) -> dict:
-    """Post to a personal LinkedIn feed (gg or emma)."""
+    """Post a single image to a personal LinkedIn feed (gg or emma)."""
     tok = LI_TOKENS.get(account, {})
     access_token = tok.get("access_token", "")
     person_id = tok.get("person_id", "")
@@ -1900,6 +1940,118 @@ async def publish_linkedin_personal(account: str, image_bytes: bytes, caption: s
     owner = f"urn:li:person:{person_id}"
     asset = await upload_image_to_li(image_bytes, owner, access_token)
     return await _li_post(owner, access_token, asset, caption)
+
+
+def _images_to_pdf_bytes(images_bytes_list: list) -> bytes:
+    """Combine carousel PNG slides into a single PDF, one slide per page."""
+    pil_images = []
+    for b in images_bytes_list:
+        pil_images.append(Image.open(io.BytesIO(b)).convert("RGB"))
+    buf = io.BytesIO()
+    pil_images[0].save(buf, format="PDF", save_all=True, append_images=pil_images[1:])
+    return buf.getvalue()
+
+
+async def _upload_pdf_to_li(pdf_bytes: bytes, owner_urn: str, access_token: str) -> str | None:
+    """Register + upload a PDF document (carousel) to LinkedIn. Returns asset URN."""
+    if not access_token:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.post(
+                "https://api.linkedin.com/v2/assets?action=registerUpload",
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+                json={
+                    "registerUploadRequest": {
+                        "recipes": ["urn:li:digitalmediaRecipe:feedshare-document"],
+                        "owner": owner_urn,
+                        "serviceRelationships": [{"relationshipType": "OWNER", "identifier": "urn:li:userGeneratedContent"}],
+                    }
+                },
+            )
+            data = r.json()
+            upload_url = data["value"]["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"]
+            asset = data["value"]["asset"]
+            r2 = await client.put(
+                upload_url,
+                headers={"Authorization": f"Bearer {access_token}"},
+                content=pdf_bytes,
+            )
+            if r2.status_code in (200, 201):
+                return asset
+            log.error(f"LI PDF upload HTTP {r2.status_code}: {r2.text[:200]}")
+    except Exception as e:
+        log.error(f"LI PDF upload error ({owner_urn}): {e}")
+    return None
+
+
+async def _li_post_document(author_urn: str, access_token: str, asset: str, caption: str, title: str) -> dict:
+    """Post a ugcPost referencing an uploaded document asset (swipeable PDF carousel)."""
+    post_body = {
+        "author": author_urn,
+        "lifecycleState": "PUBLISHED",
+        "specificContent": {
+            "com.linkedin.ugc.ShareContent": {
+                "shareCommentary": {"text": caption},
+                "shareMediaCategory": "DOCUMENT",
+                "media": [{
+                    "status": "READY",
+                    "media": asset,
+                    "title": {"text": (title or "Carousel")[:100]},
+                }],
+            }
+        },
+        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                "https://api.linkedin.com/v2/ugcPosts",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                    "X-Restli-Protocol-Version": "2.0.0",
+                },
+                json=post_body,
+            )
+            return r.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def publish_linkedin_personal_carousel(account: str, images_bytes_list: list, caption: str, title: str = "") -> dict:
+    """Post a multi-slide PDF carousel to a personal LinkedIn feed (gg or emma)."""
+    tok = LI_TOKENS.get(account, {})
+    access_token = tok.get("access_token", "")
+    person_id = tok.get("person_id", "")
+    if not access_token or not person_id:
+        return {"error": f"LinkedIn ({account}) not authenticated"}
+    owner = f"urn:li:person:{person_id}"
+    try:
+        pdf_bytes = _images_to_pdf_bytes(images_bytes_list)
+    except Exception as e:
+        return {"error": f"PDF build failed: {e}"}
+    asset = await _upload_pdf_to_li(pdf_bytes, owner, access_token)
+    if not asset:
+        return {"error": "PDF upload to LinkedIn failed"}
+    return await _li_post_document(owner, access_token, asset, caption, title)
+
+
+async def publish_linkedin_carousel(page_id: str, images_bytes_list: list, caption: str, title: str = "") -> dict:
+    """Post a multi-slide PDF carousel to a LinkedIn organization page (uses GG's admin token)."""
+    gg = LI_TOKENS.get("gg", {})
+    access_token = gg.get("access_token", "")
+    if not access_token:
+        return {"error": "LinkedIn (gg) not authenticated"}
+    owner = f"urn:li:organization:{page_id}"
+    try:
+        pdf_bytes = _images_to_pdf_bytes(images_bytes_list)
+    except Exception as e:
+        return {"error": f"PDF build failed: {e}"}
+    asset = await _upload_pdf_to_li(pdf_bytes, owner, access_token)
+    if not asset:
+        return {"error": "PDF upload to LinkedIn failed"}
+    return await _li_post_document(owner, access_token, asset, caption, title)
 
 
 # ── POST CONTENT ──────────────────────────────────────────────────────────────
@@ -1973,15 +2125,26 @@ async def post_content(content: dict, brand: str) -> dict:
 
     # ── FACEBOOK ──
     if "facebook" in cfg["platforms"] and fb_page_id and images:
-        results["facebook"] = await publish_facebook(fb_page_id, images[0], ig_caption)
+        if ct == "carousel" and len(images) >= 2:
+            results["facebook"] = await publish_facebook_carousel(fb_page_id, images, ig_caption)
+        else:
+            results["facebook"] = await publish_facebook(fb_page_id, images[0], ig_caption)
 
     # ── LINKEDIN (company page + any personal feeds this brand cross-posts to) ──
     if "linkedin" in cfg["platforms"] and images:
         li_results: dict = {}
+        li_title = content.get("topic", "") or BRANDS[brand]["name"]
+        use_carousel = (ct == "carousel" and len(images) >= 2)
         if li_page_id:
-            li_results["company"] = await publish_linkedin(li_page_id, images[0], cap_li)
+            if use_carousel:
+                li_results["company"] = await publish_linkedin_carousel(li_page_id, images, cap_li, li_title)
+            else:
+                li_results["company"] = await publish_linkedin(li_page_id, images[0], cap_li)
         for acct in cfg.get("li_personal_accounts", []) or []:
-            li_results[f"personal_{acct}"] = await publish_linkedin_personal(acct, images[0], cap_li)
+            if use_carousel:
+                li_results[f"personal_{acct}"] = await publish_linkedin_personal_carousel(acct, images, cap_li, li_title)
+            else:
+                li_results[f"personal_{acct}"] = await publish_linkedin_personal(acct, images[0], cap_li)
         if li_results:
             results["linkedin"] = li_results
 
