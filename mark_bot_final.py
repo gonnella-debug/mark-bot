@@ -1519,20 +1519,22 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
 
 
 async def render_carousel_images(content: dict, brand: str) -> list[bytes]:
-    """Render all 3 carousel slides using Pillow and return list of PNG bytes."""
-    images = []
+    """Render all carousel slides via Playwright using local HD backgrounds in templates/backgrounds/."""
+    from renderer import render_carousel
     slides = content.get("slides", [])
-    for i in range(len(slides)):
-        img = await create_slide_pillow(content, i, brand)
-        if img:
-            images.append(img)
-        await asyncio.sleep(0.3)
-    return images
+    if not slides:
+        return []
+    return await render_carousel(slides, brand)
 
 
 async def render_static_image(content: dict, brand: str) -> bytes | None:
-    """Render a single static post image using Pillow."""
-    return await create_slide_pillow(content, 0, brand)
+    """Render a single static post image via Playwright (first slide only)."""
+    from renderer import render_carousel
+    slides = content.get("slides", [])
+    if not slides:
+        return None
+    imgs = await render_carousel(slides[:1], brand)
+    return imgs[0] if imgs else None
 
 
 # ── META GRAPH API ────────────────────────────────────────────────────────────
