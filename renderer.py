@@ -5,6 +5,7 @@ Generates Instagram carousel slides matching Nucassa designer quality.
 
 import os
 import json
+import base64
 import random
 import asyncio
 import logging
@@ -15,6 +16,25 @@ log = logging.getLogger(__name__)
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 BG_DIR = TEMPLATE_DIR / "backgrounds"
 ASSETS_DIR = TEMPLATE_DIR / "assets"
+
+
+def _file_to_data_uri(path: str) -> str:
+    """Read a local image and return a base64 data: URI so Chromium never hits file://.
+    Chromium headless blocks file:// cross-directory reads, which made the cover
+    slide's background image load as a blank slide."""
+    if not path:
+        return ""
+    try:
+        p = Path(path)
+        if not p.exists():
+            return ""
+        ext = p.suffix.lower().lstrip(".")
+        mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}.get(ext, "image/png")
+        b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+        return f"data:{mime};base64,{b64}"
+    except Exception as e:
+        log.error(f"data-uri conversion failed for {path}: {e}")
+        return ""
 
 # ── BACKGROUND IMAGE LIBRARY ──
 # Tags for automatic selection based on content topic
@@ -116,7 +136,7 @@ def generate_cover_slide(headline_top: str, headline_gold: str, headline_bottom:
     {_base_css()}
     .bg-image {{
         position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-        background-image: url('file://{bg_image}');
+        background-image: url('{_file_to_data_uri(bg_image)}');
         background-size: cover; background-position: center;
         filter: brightness(0.65) saturate(0.85);
     }}
@@ -154,7 +174,7 @@ def generate_cover_slide(headline_top: str, headline_gold: str, headline_bottom:
     <div class="slide">
         <div class="bg-image"></div>
         <div class="gradient-overlay"></div>
-        <img class="logo-watermark" src="file://{logo_path}" alt="">
+        <img class="logo-watermark" src="{_file_to_data_uri(logo_path)}" alt="">
         <div class="content">
             <div class="headline-small">{headline_top}</div>
             <div class="headline-big">{headline_gold}</div>
@@ -211,7 +231,7 @@ def generate_data_slide(headline_gold: str, headline_white: str, bullets: list[s
             <div class="headline-white">{headline_white}</div>
             <div class="stats">{bullet_html}</div>
         </div>
-        <img class="logo-bottom" src="file://{logo_path}" alt="">
+        <img class="logo-bottom" src="{_file_to_data_uri(logo_path)}" alt="">
     </div></body></html>"""
 
 
@@ -266,7 +286,7 @@ def generate_insight_slide(headline_gold: str, headline_white: str, bullets: lis
             <div class="closing">{closing_white}</div>
             <div class="closing-gold">{closing_gold}</div>
         </div>
-        <img class="logo-bottom" src="file://{logo_path}" alt="">
+        <img class="logo-bottom" src="{_file_to_data_uri(logo_path)}" alt="">
     </div></body></html>"""
 
 
@@ -281,7 +301,7 @@ def generate_photo_data_slide(headline_gold: str, headline_white: str, bullets: 
     {_base_css()}
     .bg-image {{
         position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-        background-image: url('file://{bg_image}');
+        background-image: url('{_file_to_data_uri(bg_image)}');
         background-size: cover; background-position: center;
         filter: brightness(0.5) saturate(0.8);
     }}
@@ -317,7 +337,7 @@ def generate_photo_data_slide(headline_gold: str, headline_white: str, bullets: 
     <div class="slide">
         <div class="bg-image"></div>
         <div class="gradient-overlay"></div>
-        <img class="logo-watermark" src="file://{logo_path}" alt="">
+        <img class="logo-watermark" src="{_file_to_data_uri(logo_path)}" alt="">
         <div class="content">
             <div class="headline">{headline_gold}</div>
             <div class="headline-white">{headline_white}</div>
@@ -349,7 +369,7 @@ def generate_cta_slide(cta_text: str, brand_name: str, logo_path: str,
     </style></head><body>
     <div class="slide">
         <div class="cta-text">{cta_text}</div>
-        <img class="logo-center" src="file://{logo_path}" alt="">
+        <img class="logo-center" src="{_file_to_data_uri(logo_path)}" alt="">
         <div class="brand-name">{brand_name}</div>
     </div></body></html>"""
 
