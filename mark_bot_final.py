@@ -58,9 +58,7 @@ LI_CLIENT_ID        = os.getenv("LI_CLIENT_ID", "")
 LI_CLIENT_SECRET    = os.getenv("LI_CLIENT_SECRET", "")
 LI_NUCASSA_RE_PAGE  = os.getenv("LI_NUCASSA_RE_PAGE", "90919312")
 LI_HOLDINGS_PAGE    = os.getenv("LI_HOLDINGS_PAGE", "109941216")
-LI_SCOPE            = os.getenv("LI_SCOPE", "openid profile email w_member_social")
-# Set env LI_SCOPE="openid profile email w_member_social w_organization_social"
-# ONLY after Marketing Developer Platform is approved on the LinkedIn app.
+LI_SCOPE            = os.getenv("LI_SCOPE", "w_member_social")
 LI_TOKENS_FILE      = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "li_tokens.json")
 
 def _load_li_tokens() -> dict:
@@ -1761,14 +1759,28 @@ async def linkedin_auth_callback(code: str = None, state: str = None, error: str
                 await send_telegram(f"❌ LinkedIn token exchange returned no access_token: {tok}")
                 return JSONResponse({"error": "No access_token", "detail": tok})
 
-            # Fetch person URN via OpenID userinfo (works with `openid profile` scope)
-            u = await client.get(
-                "https://api.linkedin.com/v2/userinfo",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-            userinfo = u.json() if u.status_code == 200 else {}
-            person_id = userinfo.get("sub", "")
-            person_name = userinfo.get("name", account.title())
+            # Try to fetch person URN — /v2/userinfo (needs openid/profile) then /v2/me (needs r_liteprofile).
+            # If both fail, accept token anyway (company-page posts still work via w_member_social).
+            person_id = ""
+            person_name = account.title()
+            for path, id_key, name_key in (
+                ("https://api.linkedin.com/v2/userinfo", "sub", "name"),
+                ("https://api.linkedin.com/v2/me", "id", "localizedFirstName"),
+            ):
+                try:
+                    u = await client.get(path, headers={"Authorization": f"Bearer {access_token}"})
+                    if u.status_code == 200:
+                        info = u.json()
+                        person_id = info.get(id_key, "") or person_id
+                        person_name = info.get(name_key, "") or person_name
+                        if person_id:
+                            break
+                except Exception:
+                    continue
+            # Env var override for person URN if LinkedIn profile endpoints are locked
+            env_pid = os.getenv(f"LI_PERSON_{account.upper()}", "")
+            if env_pid and not person_id:
+                person_id = env_pid
 
         LI_TOKENS[account] = {
             "access_token": access_token,
