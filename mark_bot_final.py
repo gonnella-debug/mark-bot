@@ -2066,6 +2066,10 @@ async def post_content(content: dict, brand: str) -> dict:
     tags = " ".join(content.get("hashtags", []))
     ig_caption = f"{cap_ig}\n\n{tags}" if tags else cap_ig
 
+    # Platform override — lets callers post to a subset of the brand's configured platforms
+    override = content.pop("_platforms_override", None)
+    active_platforms = set(override) if override else set(cfg["platforms"])
+
     ig_account_id = cfg["ig_account_id"]
     fb_page_id = cfg["fb_page_id"]
     li_page_id = cfg["li_page_id"]
@@ -2089,7 +2093,7 @@ async def post_content(content: dict, brand: str) -> dict:
         log.warning(f"No images rendered for {brand} — posting may fail")
 
     # ── INSTAGRAM ──
-    if "instagram" in cfg["platforms"] and ig_account_id:
+    if "instagram" in active_platforms and ig_account_id:
         if images:
             if ct == "carousel" and len(images) >= 2:
                 container_ids = []
@@ -2124,14 +2128,14 @@ async def post_content(content: dict, brand: str) -> dict:
             results["instagram"] = {"error": "No image rendered"}
 
     # ── FACEBOOK ──
-    if "facebook" in cfg["platforms"] and fb_page_id and images:
+    if "facebook" in active_platforms and fb_page_id and images:
         if ct == "carousel" and len(images) >= 2:
             results["facebook"] = await publish_facebook_carousel(fb_page_id, images, ig_caption)
         else:
             results["facebook"] = await publish_facebook(fb_page_id, images[0], ig_caption)
 
     # ── LINKEDIN (company page + any personal feeds this brand cross-posts to) ──
-    if "linkedin" in cfg["platforms"] and images:
+    if "linkedin" in active_platforms and images:
         li_results: dict = {}
         li_title = content.get("topic", "") or BRANDS[brand]["name"]
         use_carousel = (ct == "carousel" and len(images) >= 2)
@@ -2656,8 +2660,15 @@ async def api_generate(request: Request, background_tasks: BackgroundTasks):
                 {"status": "error", "message": "Topic required — Alex must provide the content angle"},
                 status_code=400,
             )
-        background_tasks.add_task(_run_single, brand, content_type, topic, breaking)
-        return {"status": "generating", "action": "single", "brand": brand, "content_type": content_type}
+        platforms_override = body.get("platforms")  # e.g. ["instagram"] to post only to IG
+        background_tasks.add_task(_run_single, brand, content_type, topic, breaking, platforms_override)
+        return {
+            "status": "generating",
+            "action": "single",
+            "brand": brand,
+            "content_type": content_type,
+            "platforms_override": platforms_override,
+        }
 
     return JSONResponse({"error": "Invalid request"}, status_code=400)
 
@@ -2721,7 +2732,7 @@ async def api_pdf_post(request: Request, background_tasks: BackgroundTasks):
 
 # ── BACKGROUND TASKS ──────────────────────────────────────────────────────────
 
-async def _run_single(brand: str, content_type: str, topic: str, breaking: bool = False):
+async def _run_single(brand: str, content_type: str, topic: str, breaking: bool = False, platforms_override: list | None = None):
     if not topic or not topic.strip():
         await send_telegram("⚠️ No topic provided — Alex must provide the content angle. Use Alex to generate content.")
         return
@@ -2737,6 +2748,8 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
         content_type = "carousel"  # Update for rendering
     if breaking:
         content["_breaking"] = True
+    if platforms_override:
+        content["_platforms_override"] = list(platforms_override)
     # Render images and send as photos so GG can see what he's approving
     await send_telegram(f"_Rendering slides..._")
     rendered_images = []
