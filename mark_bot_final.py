@@ -1941,15 +1941,31 @@ async def post_content(content: dict, brand: str) -> dict:
         if images:
             if ct == "carousel" and len(images) >= 2:
                 container_ids = []
-                for img in images:
-                    cid = await upload_image_to_ig(ig_account_id, img, "", is_carousel_item=True)
+                failed_slide = None
+                for idx, img in enumerate(images):
+                    cid = None
+                    for attempt in range(3):
+                        cid = await upload_image_to_ig(ig_account_id, img, "", is_carousel_item=True)
+                        if cid:
+                            break
+                        log.warning(f"IG slide {idx+1} upload attempt {attempt+1}/3 failed — retrying with fresh URL")
+                        await asyncio.sleep(3 + attempt * 2)
                     if cid:
                         container_ids.append(cid)
+                    else:
+                        failed_slide = idx + 1
+                        break
                     await asyncio.sleep(1)
-                if container_ids:
+                if failed_slide:
+                    results["instagram"] = {"error": f"Slide {failed_slide} upload failed after 3 retries — carousel aborted to avoid partial post"}
+                    await send_telegram(
+                        f"⚠️ *{BRANDS[brand]['name']} — IG carousel aborted*\n"
+                        f"Slide {failed_slide} failed after 3 retries. Not posting partial carousel."
+                    )
+                elif len(container_ids) == len(images):
                     results["instagram"] = await publish_ig_carousel(ig_account_id, container_ids, ig_caption)
                 else:
-                    results["instagram"] = {"error": "No containers uploaded"}
+                    results["instagram"] = {"error": f"Only {len(container_ids)}/{len(images)} slides uploaded — carousel aborted"}
             else:
                 results["instagram"] = await publish_ig_single(ig_account_id, images[0], ig_caption)
         else:
