@@ -58,7 +58,9 @@ LI_CLIENT_ID        = os.getenv("LI_CLIENT_ID", "")
 LI_CLIENT_SECRET    = os.getenv("LI_CLIENT_SECRET", "")
 LI_NUCASSA_RE_PAGE  = os.getenv("LI_NUCASSA_RE_PAGE", "90919312")
 LI_HOLDINGS_PAGE    = os.getenv("LI_HOLDINGS_PAGE", "109941216")
-LI_SCOPE            = "openid profile email w_member_social w_organization_social"
+LI_SCOPE            = os.getenv("LI_SCOPE", "openid profile email w_member_social")
+# Set env LI_SCOPE="openid profile email w_member_social w_organization_social"
+# ONLY after Marketing Developer Platform is approved on the LinkedIn app.
 LI_TOKENS_FILE      = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "li_tokens.json")
 
 def _load_li_tokens() -> dict:
