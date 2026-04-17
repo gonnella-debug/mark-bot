@@ -246,6 +246,7 @@ _temp_images: dict = {}        # image_id → bytes (temporary image hosting for
 pending_batches: dict = {}     # batch_id → list[content_dict]
 last_batch: dict = {}          # brand → list[content_dict]
 li_oauth_states: dict = {}     # state → brand (for OAuth flow)
+_last_rendered: dict = {}      # brand → {"content": dict, "images": list[bytes], "timestamp": float}
 POSTING_LOG_FILE = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "mark_posting_log.json")
 
 def _load_posting_log() -> list:
@@ -2092,6 +2093,14 @@ async def post_content(content: dict, brand: str) -> dict:
     if not images and ct not in ("reels",):
         log.warning(f"No images rendered for {brand} — posting may fail")
 
+    # Cache the successful render so we can re-post to a single platform without re-rendering
+    if images:
+        _last_rendered[brand] = {
+            "content": {k: v for k, v in content.items() if k != "_rendered_images_b64"},
+            "images": list(images),
+            "timestamp": time.time(),
+        }
+
     # ── INSTAGRAM ──
     if "instagram" in active_platforms and ig_account_id:
         if images:
@@ -2671,6 +2680,42 @@ async def api_generate(request: Request, background_tasks: BackgroundTasks):
         }
 
     return JSONResponse({"error": "Invalid request"}, status_code=400)
+
+
+@app.post("/repost")
+async def api_repost(request: Request, background_tasks: BackgroundTasks):
+    """Re-post the last rendered content for a brand to a subset of platforms — no re-render, no re-generation.
+
+    Body: {"brand": "nucassa_holdings", "platforms": ["instagram"]}
+    """
+    body = await request.json()
+    brand = body.get("brand")
+    platforms = body.get("platforms")
+    if not brand or brand not in BRANDS:
+        return JSONResponse({"error": f"Unknown brand: {brand}"}, status_code=400)
+    cached = _last_rendered.get(brand)
+    if not cached or not cached.get("images"):
+        return JSONResponse({"error": f"No cached render for {brand} — run /generate first"}, status_code=404)
+    content = dict(cached["content"])
+    content["_cached_images"] = cached["images"]
+    if platforms:
+        content["_platforms_override"] = list(platforms)
+
+    async def _do_post():
+        result = await post_content(content, brand)
+        await send_telegram(
+            f"Re-post {BRANDS[brand]['name']} — platforms: {platforms or 'all'}\n"
+            f"Results: {json.dumps({k: ('ok' if 'error' not in str(v) else 'err') for k, v in result.items()})}"
+        )
+
+    background_tasks.add_task(_do_post)
+    return {
+        "status": "reposting",
+        "brand": brand,
+        "platforms": platforms or "all",
+        "slides_cached": len(cached["images"]),
+        "age_seconds": int(time.time() - cached["timestamp"]),
+    }
 
 
 @app.post("/approve_batch")

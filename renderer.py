@@ -416,7 +416,36 @@ async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]
         browser = await p.chromium.launch()
         page = await browser.new_page(viewport={"width": 1080, "height": 1080})
 
-        for i, slide in enumerate(slides_content):
+        def _coerce(slide: dict, i: int, total: int) -> dict:
+            """Map the older {headline, subtext, stats|points, cta_line} schema into the renderer's expected fields."""
+            s = dict(slide)
+            # Infer type if missing
+            if "type" not in s:
+                if i == 0:
+                    s["type"] = "cover"
+                elif i == total - 1 and (s.get("cta_line") or s.get("cta_text") or "CTA" in str(s.get("headline", "")).upper()):
+                    s["type"] = "cta"
+                elif s.get("stats") or s.get("points") or s.get("bullets"):
+                    s["type"] = "data"
+                else:
+                    s["type"] = "insight"
+            # Fill missing fields from the old schema
+            headline = s.get("headline", "")
+            subtext = s.get("subtext", "")
+            bullets = s.get("bullets") or s.get("stats") or s.get("points") or []
+            bullets = [str(b) for b in bullets] if bullets else []
+            s.setdefault("headline_gold", subtext or headline)
+            s.setdefault("headline_white", headline)
+            s.setdefault("headline_top", subtext or "")
+            s.setdefault("headline_bottom", "")
+            s.setdefault("bullets", bullets)
+            if s["type"] == "cta":
+                s.setdefault("cta_text", s.get("cta_line") or s.get("cta") or headline or subtext or "")
+            return s
+
+        total_slides = len(slides_content)
+        for i, raw_slide in enumerate(slides_content):
+            slide = _coerce(raw_slide, i, total_slides)
             slide_type = slide.get("type", "data")
 
             if slide_type == "cover":
