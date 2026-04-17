@@ -53,15 +53,50 @@ META_APP_ID         = os.getenv("META_APP_ID", "")
 META_APP_SECRET     = os.getenv("META_APP_SECRET", "")
 META_SYSTEM_TOKEN   = os.getenv("META_SYSTEM_TOKEN")
 
-# LinkedIn
+# LinkedIn — multi-account (GG = admin of Nucassa pages + personal feed; Emma = personal feed only)
 LI_CLIENT_ID        = os.getenv("LI_CLIENT_ID", "")
 LI_CLIENT_SECRET    = os.getenv("LI_CLIENT_SECRET", "")
 LI_NUCASSA_RE_PAGE  = os.getenv("LI_NUCASSA_RE_PAGE", "90919312")
 LI_HOLDINGS_PAGE    = os.getenv("LI_HOLDINGS_PAGE", "109941216")
-LI_ACCESS_TOKEN     = os.getenv("LI_ACCESS_TOKEN", "")       # set after first OAuth
-LI_REFRESH_TOKEN    = os.getenv("LI_REFRESH_TOKEN", "")
-_li_person_id       = ""  # fetched during OAuth
-LI_TOKEN_EXPIRY     = int(os.getenv("LI_TOKEN_EXPIRY", "0"))
+LI_SCOPE            = "openid profile email w_member_social w_organization_social"
+LI_TOKENS_FILE      = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "li_tokens.json")
+
+def _load_li_tokens() -> dict:
+    """Load per-account LinkedIn tokens from persistent volume, fall back to env vars."""
+    try:
+        with open(LI_TOKENS_FILE, "r") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    except Exception as e:
+        log.warning(f"Could not load LI tokens from {LI_TOKENS_FILE}: {e}")
+    # Env var fallback (for first-run or if volume is missing)
+    tokens = {}
+    for acct in ("gg", "emma"):
+        token = os.getenv(f"LI_TOKEN_{acct.upper()}", "")
+        person = os.getenv(f"LI_PERSON_{acct.upper()}", "")
+        if token:
+            tokens[acct] = {
+                "access_token": token,
+                "refresh_token": os.getenv(f"LI_REFRESH_{acct.upper()}", ""),
+                "person_id": person,
+                "expiry": int(os.getenv(f"LI_EXPIRY_{acct.upper()}", "0")),
+                "name": os.getenv(f"LI_NAME_{acct.upper()}", acct.title()),
+            }
+    return tokens
+
+def _save_li_tokens():
+    """Persist LI tokens to volume so they survive Railway redeploys."""
+    try:
+        os.makedirs(os.path.dirname(LI_TOKENS_FILE), exist_ok=True)
+        with open(LI_TOKENS_FILE, "w") as f:
+            json.dump(LI_TOKENS, f)
+    except Exception as e:
+        log.error(f"Failed to save LI tokens: {e}")
+
+LI_TOKENS: dict = _load_li_tokens()
 
 # Canva
 CANVA_EMAIL         = os.getenv("CANVA_EMAIL", "")
@@ -103,6 +138,7 @@ BRANDS = {
         "ig_account_id": IG_NUCASSA_RE,
         "fb_page_id": FB_NUCASSA_RE,
         "li_page_id": LI_NUCASSA_RE_PAGE,
+        "li_personal_accounts": [],
         "tone": "authoritative, data-led, facts about Dubai property market, lifestyle. Bold, confident, never salesy.",
         "cta": "DM us today",
         "color_primary": "#1C1C1C",
@@ -138,6 +174,7 @@ BRANDS = {
         "ig_account_id": IG_HOLDINGS,
         "fb_page_id": FB_HOLDINGS,
         "li_page_id": LI_HOLDINGS_PAGE,
+        "li_personal_accounts": ["gg", "emma"],
         "tone": "institutional, precise, investor-grade. ADGM SPV, DBS custody, capital protection. Goldman Sachs meets Dubai.",
         "cta": "Message us to learn more",
         "color_primary": "#1C1C1C",
@@ -173,6 +210,7 @@ BRANDS = {
         "ig_account_id": IG_LISTR,
         "fb_page_id": FB_LISTR,
         "li_page_id": None,
+        "li_personal_accounts": [],
         "tone": "modern, direct, disruptive. Cutting unnecessary fees, empowering buyers and sellers. Sharp and confident.",
         "cta": "Sign up free at ListR.ae",
         "color_primary": "#000000",
@@ -1670,35 +1708,37 @@ async def publish_facebook(page_id: str, image_bytes: bytes, caption: str) -> di
 # ── LINKEDIN API ──────────────────────────────────────────────────────────────
 
 @app.get("/linkedin/auth")
-async def linkedin_auth_start():
-    """Start LinkedIn OAuth flow. Visit this URL in browser to authenticate."""
+async def linkedin_auth_start(account: str = "gg"):
+    """Start LinkedIn OAuth for a specific account (gg or emma).
+    Visit /linkedin/auth?account=gg (logged in as GG) or /linkedin/auth?account=emma (logged in as Emma)."""
+    account = account.lower().strip()
+    if account not in ("gg", "emma"):
+        return JSONResponse({"error": f"Unknown account '{account}' — use gg or emma"})
     state = str(uuid.uuid4())
-    li_oauth_states[state] = "mark"
-    scope = "w_member_social"
+    li_oauth_states[state] = {"account": account}
     auth_url = (
         f"https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code"
         f"&client_id={LI_CLIENT_ID}"
         f"&redirect_uri={RAILWAY_URL}/linkedin/callback"
         f"&state={state}"
-        f"&scope={scope}"
+        f"&scope={LI_SCOPE.replace(' ', '%20')}"
     )
     return RedirectResponse(auth_url)
 
 
 @app.get("/linkedin/callback")
 async def linkedin_auth_callback(code: str = None, state: str = None, error: str = None):
-    """Handle LinkedIn OAuth callback and store access token."""
-    global LI_ACCESS_TOKEN, LI_REFRESH_TOKEN, LI_TOKEN_EXPIRY, _li_person_id
-
+    """Handle LinkedIn OAuth callback — stores token under the account chosen in /linkedin/auth."""
     if error:
         await send_telegram(f"❌ LinkedIn auth failed: {error}")
         return JSONResponse({"error": error})
 
-    if state not in li_oauth_states:
+    state_data = li_oauth_states.pop(state, None) if state else None
+    if not state_data:
         return JSONResponse({"error": "Invalid state"})
+    account = state_data.get("account", "gg")
 
-    # Exchange code for token
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.post(
@@ -1711,37 +1751,62 @@ async def linkedin_auth_callback(code: str = None, state: str = None, error: str
                     "client_secret": LI_CLIENT_SECRET,
                 },
             )
-            data = r.json()
-            LI_ACCESS_TOKEN = data.get("access_token", "")
-            LI_REFRESH_TOKEN = data.get("refresh_token", "")
-            LI_TOKEN_EXPIRY = int(time.time()) + data.get("expires_in", 5184000)
+            tok = r.json()
+            access_token = tok.get("access_token", "")
+            refresh_token = tok.get("refresh_token", "")
+            expires_in = tok.get("expires_in", 5184000)
+            if not access_token:
+                await send_telegram(f"❌ LinkedIn token exchange returned no access_token: {tok}")
+                return JSONResponse({"error": "No access_token", "detail": tok})
 
-        li_oauth_states.pop(state, None)
+            # Fetch person URN via OpenID userinfo (works with `openid profile` scope)
+            u = await client.get(
+                "https://api.linkedin.com/v2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            userinfo = u.json() if u.status_code == 200 else {}
+            person_id = userinfo.get("sub", "")
+            person_name = userinfo.get("name", account.title())
+
+        LI_TOKENS[account] = {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "person_id": person_id,
+            "expiry": int(time.time()) + expires_in,
+            "name": person_name,
+        }
+        _save_li_tokens()
+
         await send_telegram(
-            f"✅ *LinkedIn connected successfully*\n"
-            f"Token valid for {data.get('expires_in', 0) // 86400} days.\n"
-            f"Mark can now post to Nucassa RE and Holdings on LinkedIn."
+            f"✅ *LinkedIn connected — {account}*\n"
+            f"Signed in as: {person_name}\n"
+            f"Person URN: `{person_id}`\n"
+            f"Token valid for {expires_in // 86400} days."
         )
-        return JSONResponse({"status": "LinkedIn connected successfully"})
+        return JSONResponse({
+            "status": "connected",
+            "account": account,
+            "name": person_name,
+            "person_id": person_id,
+        })
     except Exception as e:
         await send_telegram(f"❌ LinkedIn token exchange failed: {e}")
         return JSONResponse({"error": str(e)})
 
 
-async def upload_image_to_li(image_bytes: bytes) -> str | None:
-    """Upload image to LinkedIn and return asset URN."""
-    if not LI_ACCESS_TOKEN:
+async def upload_image_to_li(image_bytes: bytes, owner_urn: str, access_token: str) -> str | None:
+    """Register + upload an image to LinkedIn. Owner is either urn:li:person:{id} or urn:li:organization:{id}."""
+    if not access_token:
         return None
-    # Register upload
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
                 "https://api.linkedin.com/v2/assets?action=registerUpload",
-                headers={"Authorization": f"Bearer {LI_ACCESS_TOKEN}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
                 json={
                     "registerUploadRequest": {
                         "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
-                        "owner": "urn:li:organization:90919312",
+                        "owner": owner_urn,
                         "serviceRelationships": [{"relationshipType": "OWNER", "identifier": "urn:li:userGeneratedContent"}],
                     }
                 },
@@ -1750,31 +1815,22 @@ async def upload_image_to_li(image_bytes: bytes) -> str | None:
             upload_url = data["value"]["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"]
             asset = data["value"]["asset"]
 
-            # Upload image
             r2 = await client.put(
                 upload_url,
-                headers={"Authorization": f"Bearer {LI_ACCESS_TOKEN}"},
+                headers={"Authorization": f"Bearer {access_token}"},
                 content=image_bytes,
             )
             if r2.status_code in (200, 201):
                 return asset
     except Exception as e:
-        log.error(f"LI image upload error: {e}")
+        log.error(f"LI image upload error ({owner_urn}): {e}")
     return None
 
 
-async def publish_linkedin(page_id: str, image_bytes: bytes, caption: str) -> dict:
-    """Post to a LinkedIn Organization Page."""
-    if not LI_ACCESS_TOKEN:
-        return {"error": "LinkedIn not authenticated — visit /linkedin/auth"}
-
-    asset = await upload_image_to_li(image_bytes)
-    if not asset:
-        # Post text-only if image upload fails
-        asset = None
-
+async def _li_post(author_urn: str, access_token: str, asset: str | None, caption: str) -> dict:
+    """Low-level: POST a ugcPost as the given author URN with the given access token."""
     post_body = {
-        "author": f"urn:li:organization:{page_id}",
+        "author": author_urn,
         "lifecycleState": "PUBLISHED",
         "specificContent": {
             "com.linkedin.ugc.ShareContent": {
@@ -1791,13 +1847,12 @@ async def publish_linkedin(page_id: str, image_bytes: bytes, caption: str) -> di
             "media": asset,
             "title": {"text": ""},
         }]
-
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
                 "https://api.linkedin.com/v2/ugcPosts",
                 headers={
-                    "Authorization": f"Bearer {LI_ACCESS_TOKEN}",
+                    "Authorization": f"Bearer {access_token}",
                     "Content-Type": "application/json",
                     "X-Restli-Protocol-Version": "2.0.0",
                 },
@@ -1806,6 +1861,29 @@ async def publish_linkedin(page_id: str, image_bytes: bytes, caption: str) -> di
             return r.json()
     except Exception as e:
         return {"error": str(e)}
+
+
+async def publish_linkedin(page_id: str, image_bytes: bytes, caption: str) -> dict:
+    """Post to a LinkedIn Organization Page. Uses GG's token since he admins Nucassa pages."""
+    gg = LI_TOKENS.get("gg", {})
+    access_token = gg.get("access_token", "")
+    if not access_token:
+        return {"error": f"LinkedIn (gg) not authenticated — visit {RAILWAY_URL}/linkedin/auth?account=gg"}
+    owner = f"urn:li:organization:{page_id}"
+    asset = await upload_image_to_li(image_bytes, owner, access_token)
+    return await _li_post(owner, access_token, asset, caption)
+
+
+async def publish_linkedin_personal(account: str, image_bytes: bytes, caption: str) -> dict:
+    """Post to a personal LinkedIn feed (gg or emma)."""
+    tok = LI_TOKENS.get(account, {})
+    access_token = tok.get("access_token", "")
+    person_id = tok.get("person_id", "")
+    if not access_token or not person_id:
+        return {"error": f"LinkedIn ({account}) not authenticated — visit {RAILWAY_URL}/linkedin/auth?account={account}"}
+    owner = f"urn:li:person:{person_id}"
+    asset = await upload_image_to_li(image_bytes, owner, access_token)
+    return await _li_post(owner, access_token, asset, caption)
 
 
 # ── POST CONTENT ──────────────────────────────────────────────────────────────
@@ -1865,14 +1943,15 @@ async def post_content(content: dict, brand: str) -> dict:
     if "facebook" in cfg["platforms"] and fb_page_id and images:
         results["facebook"] = await publish_facebook(fb_page_id, images[0], ig_caption)
 
-    # ── LINKEDIN ──
-    if "linkedin" in cfg["platforms"] and li_page_id:
-        if not LI_ACCESS_TOKEN:
-            results["linkedin"] = {"error": f"LinkedIn not authenticated — visit {RAILWAY_URL}/linkedin/auth"}
-        elif images:
-            results["linkedin"] = await publish_linkedin(li_page_id, images[0], cap_li)
-        else:
-            results["linkedin"] = {"error": "No image to post to LinkedIn"}
+    # ── LINKEDIN (company page + any personal feeds this brand cross-posts to) ──
+    if "linkedin" in cfg["platforms"] and images:
+        li_results: dict = {}
+        if li_page_id:
+            li_results["company"] = await publish_linkedin(li_page_id, images[0], cap_li)
+        for acct in cfg.get("li_personal_accounts", []) or []:
+            li_results[f"personal_{acct}"] = await publish_linkedin_personal(acct, images[0], cap_li)
+        if li_results:
+            results["linkedin"] = li_results
 
     # Save to Google Drive
     if images:
@@ -2339,7 +2418,7 @@ async def serve_temp_image(image_id: str):
 
 @app.get("/")
 async def health():
-    li_status = "connected" if LI_ACCESS_TOKEN else "needs_auth"
+    li_accounts = {a: bool(LI_TOKENS.get(a, {}).get("access_token")) for a in ("gg", "emma")}
     return {
         "status": "Mark is running",
         "version": "4.0",
@@ -2348,7 +2427,7 @@ async def health():
         "drive_pdfs_found": _bg_pdfs_found,
         "drive_photos_extracted": _bg_extracted,
         "drive_index_ready": _bg_index_ready,
-        "linkedin": li_status,
+        "linkedin": li_accounts,
         "pending_approvals": len(pending_approvals),
         "pending_batches": {k: len(v) for k, v in pending_batches.items()},
     }
@@ -2410,7 +2489,13 @@ async def api_status():
         }
     return {
         "mark_status": "online",
-        "linkedin_connected": bool(LI_ACCESS_TOKEN),
+        "linkedin": {
+            a: {
+                "connected": bool(LI_TOKENS.get(a, {}).get("access_token")),
+                "name": LI_TOKENS.get(a, {}).get("name", ""),
+                "person_id": LI_TOKENS.get(a, {}).get("person_id", ""),
+            } for a in ("gg", "emma")
+        },
         "pending_approvals": len(pending_approvals),
         "brands": status,
     }
@@ -2613,36 +2698,43 @@ async def telegram_listener():
 # ── LINKEDIN TOKEN REFRESH ────────────────────────────────────────────────────
 
 async def refresh_linkedin_token():
-    global LI_ACCESS_TOKEN, LI_REFRESH_TOKEN, LI_TOKEN_EXPIRY
-    if not LI_REFRESH_TOKEN:
-        return
-    remaining = LI_TOKEN_EXPIRY - time.time()
-    if remaining > 432000:          # more than 5 days left
-        return
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                "https://www.linkedin.com/oauth/v2/accessToken",
-                data={
-                    "grant_type":    "refresh_token",
-                    "refresh_token": LI_REFRESH_TOKEN,
-                    "client_id":     LI_CLIENT_ID,
-                    "client_secret": LI_CLIENT_SECRET,
-                },
+    """Refresh any per-account LI token within 5 days of expiry."""
+    refreshed_any = False
+    for account in list(LI_TOKENS.keys()):
+        tok = LI_TOKENS.get(account) or {}
+        refresh_token = tok.get("refresh_token", "")
+        expiry = tok.get("expiry", 0)
+        if not refresh_token:
+            continue
+        if (expiry - time.time()) > 432000:  # more than 5 days left
+            continue
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    "https://www.linkedin.com/oauth/v2/accessToken",
+                    data={
+                        "grant_type":    "refresh_token",
+                        "refresh_token": refresh_token,
+                        "client_id":     LI_CLIENT_ID,
+                        "client_secret": LI_CLIENT_SECRET,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            LI_TOKENS[account]["access_token"] = data["access_token"]
+            LI_TOKENS[account]["refresh_token"] = data.get("refresh_token", refresh_token)
+            LI_TOKENS[account]["expiry"] = int(time.time()) + data.get("expires_in", 5184000)
+            refreshed_any = True
+            days_valid = data.get("expires_in", 5184000) // 86400
+            await send_telegram(f"LinkedIn token refreshed ({account}) — valid for {days_valid} days")
+            log.info(f"LinkedIn token refreshed for {account}, expires in {days_valid} days")
+        except Exception as e:
+            log.error(f"LinkedIn token refresh failed for {account}: {e}")
+            await send_telegram(
+                f"LinkedIn token refresh FAILED ({account}) — re-auth at {RAILWAY_URL}/linkedin/auth?account={account}"
             )
-            resp.raise_for_status()
-            data = resp.json()
-        LI_ACCESS_TOKEN  = data["access_token"]
-        LI_REFRESH_TOKEN = data.get("refresh_token", LI_REFRESH_TOKEN)
-        LI_TOKEN_EXPIRY  = int(time.time()) + data.get("expires_in", 5184000)
-        days_valid = data.get("expires_in", 5184000) // 86400
-        await send_telegram(f"LinkedIn token refreshed — valid for {days_valid} days")
-        log.info(f"LinkedIn token refreshed, expires in {days_valid} days")
-    except Exception as e:
-        log.error(f"LinkedIn token refresh failed: {e}")
-        await send_telegram(
-            f"LinkedIn token refresh FAILED — manual re-auth needed at {RAILWAY_URL}/linkedin/auth"
-        )
+    if refreshed_any:
+        _save_li_tokens()
 
 
 async def linkedin_token_monitor():
