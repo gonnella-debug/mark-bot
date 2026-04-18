@@ -100,6 +100,37 @@ OUTPUT FORMAT — return ONLY valid JSON:
 }"""
 
 
+POSTING_LOG_FILE = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "mark_posting_log.json")
+
+
+def _load_recent_topics(brand: str, days: int = 7) -> list[str]:
+    """Read the posting log and return topics posted for `brand` in last `days`.
+    Used to prevent Mark from repeating himself within a week."""
+    try:
+        if not os.path.exists(POSTING_LOG_FILE):
+            return []
+        with open(POSTING_LOG_FILE, "r") as f:
+            log_entries = json.load(f)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        recent = []
+        for entry in log_entries:
+            if entry.get("brand") != brand:
+                continue
+            ts = entry.get("timestamp", "")
+            try:
+                entry_dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                continue
+            if entry_dt >= cutoff:
+                topic = (entry.get("topic") or "").strip()
+                if topic:
+                    recent.append(topic)
+        return recent
+    except Exception as e:
+        log.warning(f"Could not load recent topics for {brand}: {e}")
+        return []
+
+
 async def search_and_generate(brand: str, specific_topic: str = None) -> dict:
     """
     Search real news, analyze market conditions, generate carousel content.
@@ -108,6 +139,18 @@ async def search_and_generate(brand: str, specific_topic: str = None) -> dict:
     brand_ctx = BRAND_CONTEXT.get(brand, BRAND_CONTEXT["nucassa_re"])
     today = datetime.now(timezone(timedelta(hours=4))).strftime("%A %d %B %Y")
 
+    # Pull last 7 days of posted topics so Mark doesn't repeat himself
+    recent_topics = _load_recent_topics(brand, days=7)
+    dedup_block = ""
+    if recent_topics:
+        formatted = "\n".join(f"  - {t}" for t in recent_topics[-15:])  # cap to last 15 for prompt size
+        dedup_block = f"""
+ALREADY POSTED IN THE LAST 7 DAYS — DO NOT REPEAT OR PARAPHRASE ANY OF THESE:
+{formatted}
+
+If you can only find a similar angle, find a NEW data point, NEW comparison, or NEW vertical within the brand's topic space. Repetition kills engagement — your topic must feel fresh next to the recent posts above.
+"""
+
     search_prompt = f"""Today is {today} (Dubai time).
 
 Brand: {brand_ctx['name']} ({brand_ctx['handle']})
@@ -115,7 +158,7 @@ Audience: {brand_ctx['audience']}
 Tone: {brand_ctx['tone']}
 Topics: {brand_ctx['topics']}
 CTA: {brand_ctx['cta']}
-
+{dedup_block}
 {"Specific topic requested: " + specific_topic if specific_topic else "Find the most relevant, timely topic for today's post."}
 
 Search for the latest Dubai real estate news, data, and market sentiment. Look for:
