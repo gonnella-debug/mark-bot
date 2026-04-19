@@ -129,6 +129,186 @@ def _stripe_bg_html():
     return '<div class="stripe-bg"></div><div class="streak1"></div><div class="streak2"></div>'
 
 
+def generate_forza_cover_slide(headline_top: str, headline_gold: str, headline_bottom: str,
+                                logo_path: str, accent_color: str = "#C5A86C") -> str:
+    """Forza cover — ink bg, gold chevron texture, Cinzel headline. No photo.
+    Forza is a global B2B brand — never uses Dubai lifestyle imagery."""
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+    <style>
+    {_base_css()}
+    body {{ background: #0a0a0a; font-family: 'Cormorant Garamond', serif; }}
+    .slide {{
+        background: radial-gradient(ellipse at 20% 10%, #1a1610 0%, #0a0a0a 55%, #050503 100%);
+        overflow: hidden;
+    }}
+    .chevron-pattern {{
+        position: absolute; top: -10%; right: -15%; width: 90%; height: 110%;
+        background:
+          repeating-linear-gradient(-25deg, transparent 0 80px, rgba(197,168,108,0.025) 80px 82px),
+          repeating-linear-gradient(25deg, transparent 0 120px, rgba(197,168,108,0.02) 120px 121px);
+        opacity: .9;
+    }}
+    .gold-arc {{
+        position: absolute; top: -30%; right: -20%;
+        width: 95%; height: 95%;
+        background: radial-gradient(circle, rgba(197,168,108,0.14) 0%, transparent 55%);
+    }}
+    .mini-mark {{
+        position: absolute; top: 60px; left: 60px;
+        display: flex; align-items: center; gap: 12px; opacity: .9;
+    }}
+    .mini-mark svg {{ width: 44px; height: 50px; }}
+    .mini-mark .tick {{
+        color: {accent_color}; font-family: 'Cinzel', serif; font-weight: 600;
+        font-size: 20px; letter-spacing: 6px;
+    }}
+    .divider {{
+        position: absolute; top: 60px; right: 60px;
+        font-family: 'Cinzel', serif; font-size: 12px; color: #8a8378;
+        letter-spacing: 4px; text-transform: uppercase; font-weight: 500;
+    }}
+    .content {{
+        position: absolute; inset: 0;
+        display: flex; flex-direction: column; justify-content: center;
+        padding: 0 90px; z-index: 5;
+    }}
+    .kicker {{
+        font-family: 'Cinzel', serif; font-size: 22px; font-weight: 500;
+        color: {accent_color}; letter-spacing: 8px; text-transform: uppercase;
+        margin-bottom: 28px;
+    }}
+    .headline {{
+        font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 500;
+        font-size: 78px; line-height: 1.05; color: #f7f3ea;
+        margin-bottom: 24px;
+    }}
+    .headline .hl {{ color: {accent_color}; font-style: normal; font-weight: 600; }}
+    .sub {{
+        font-family: 'Cormorant Garamond', serif; font-size: 34px; font-weight: 400;
+        color: #b5ada0; line-height: 1.35; max-width: 780px;
+    }}
+    .gold-line {{
+        position: absolute; bottom: 170px; left: 90px;
+        width: 80px; height: 2px; background: {accent_color};
+    }}
+    .footer {{
+        position: absolute; bottom: 70px; left: 90px; right: 90px;
+        display: flex; justify-content: space-between; align-items: center;
+    }}
+    .footer .brand {{
+        font-family: 'Cinzel', serif; font-weight: 700; color: {accent_color};
+        letter-spacing: 10px; font-size: 18px;
+    }}
+    .footer .site {{
+        font-family: 'Cinzel', serif; font-weight: 500; color: #6e6a62;
+        letter-spacing: 4px; font-size: 12px; text-transform: uppercase;
+    }}
+    .arrow {{
+        position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+        width: 42px; height: 42px; border: 1.5px solid rgba(197,168,108,.6);
+        border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    }}
+    .arrow svg {{ width: 18px; height: 18px; stroke: {accent_color}; fill: none; stroke-width: 2; }}
+    </style></head><body>
+    <div class="slide">
+        <div class="chevron-pattern"></div>
+        <div class="gold-arc"></div>
+        <div class="mini-mark">
+          <svg viewBox="0 0 100 110" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="fgoldcover" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#e2c78e"/>
+                <stop offset="50%" stop-color="#c5a86c"/>
+                <stop offset="100%" stop-color="#8e7646"/>
+              </linearGradient>
+            </defs>
+            <polygon points="12,8 88,8 74,30 0,30" fill="url(#fgoldcover)"/>
+            <polygon points="17,40 66,40 54,60 6,60" fill="url(#fgoldcover)"/>
+            <polygon points="22,70 48,70 30,100 0,100" fill="url(#fgoldcover)"/>
+          </svg>
+        </div>
+        <div class="divider">Systems That Scale</div>
+        <div class="content">
+            <div class="kicker">{headline_top or 'Forza'}</div>
+            <h1 class="headline">{headline_gold}</h1>
+            <div class="sub">{headline_bottom}</div>
+        </div>
+        <div class="gold-line"></div>
+        <div class="footer">
+            <div class="brand">FORZA</div>
+            <div class="site">forza-ai.com</div>
+        </div>
+        <div class="arrow">
+          <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </div>
+    </div></body></html>"""
+
+
+def generate_forza_cta_slide(cta_text: str, accent_color: str = "#C5A86C") -> str:
+    """Forza CTA — ink bg, F-chevron mark, wordmark, single CTA line, gold arc.
+    Never uses logo_forza.png (which has the wordmark baked in and would duplicate)."""
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+    <style>
+    {_base_css()}
+    body {{ background: #0a0a0a; font-family: 'Cormorant Garamond', serif; }}
+    .slide {{
+        background: radial-gradient(ellipse at 50% 20%, #1a1610 0%, #0a0a0a 55%, #050503 100%);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 36px; padding: 0 80px;
+    }}
+    .gold-arc {{
+        position: absolute; top: -25%; left: -25%;
+        width: 150%; height: 150%;
+        background: radial-gradient(circle, rgba(197,168,108,0.08) 0%, transparent 50%);
+        pointer-events: none;
+    }}
+    .mark svg {{ width: 120px; height: 132px; }}
+    .wordmark {{
+        font-family: 'Cinzel', serif; font-weight: 700; color: {accent_color};
+        letter-spacing: 16px; font-size: 38px; margin-top: -6px;
+    }}
+    .tagline {{
+        font-family: 'Cinzel', serif; font-weight: 500; color: #6e6a62;
+        letter-spacing: 6px; font-size: 14px; text-transform: uppercase; margin-top: 4px;
+    }}
+    .gold-line {{ width: 64px; height: 2px; background: {accent_color}; }}
+    .cta {{
+        font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 500;
+        font-size: 48px; line-height: 1.25; color: #f7f3ea;
+        text-align: center; max-width: 820px; margin-top: 8px;
+    }}
+    .cta .hl {{ color: {accent_color}; font-style: normal; font-weight: 600; }}
+    .site {{
+        font-family: 'Cinzel', serif; font-weight: 600; color: {accent_color};
+        letter-spacing: 6px; font-size: 18px; text-transform: uppercase; margin-top: 24px;
+    }}
+    </style></head><body>
+    <div class="slide">
+        <div class="gold-arc"></div>
+        <div class="mark">
+          <svg viewBox="0 0 100 110" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="fgoldcta" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#e2c78e"/>
+                <stop offset="50%" stop-color="#c5a86c"/>
+                <stop offset="100%" stop-color="#8e7646"/>
+              </linearGradient>
+            </defs>
+            <polygon points="12,8 88,8 74,30 0,30" fill="url(#fgoldcta)"/>
+            <polygon points="17,40 66,40 54,60 6,60" fill="url(#fgoldcta)"/>
+            <polygon points="22,70 48,70 30,100 0,100" fill="url(#fgoldcta)"/>
+          </svg>
+        </div>
+        <div class="wordmark">FORZA</div>
+        <div class="tagline">Systems That Scale</div>
+        <div class="gold-line"></div>
+        <div class="cta">{cta_text}</div>
+        <div class="site">forza-ai.com</div>
+    </div></body></html>"""
+
+
 def generate_cover_slide(headline_top: str, headline_gold: str, headline_bottom: str,
                          bg_image: str, logo_path: str, accent_color: str = "#C9A06C") -> str:
     """Cover slide — dramatic background, headline, logo top-left, swipe arrow."""
@@ -469,12 +649,21 @@ async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]
             slide = _coerce(raw_slide, i, total_slides)
             slide_type = slide.get("type", "data")
 
+            is_forza = (brand == "forza")
+
             if slide_type == "cover":
-                bg = slide.get("bg_image") or pick_background(slide.get("headline_gold", ""))
-                html = generate_cover_slide(
-                    slide["headline_top"], slide["headline_gold"], slide.get("headline_bottom", ""),
-                    bg, logo_path, accent
-                )
+                if is_forza:
+                    # Forza cover is typography + gold chevron pattern, never a Dubai photo.
+                    html = generate_forza_cover_slide(
+                        slide["headline_top"], slide["headline_gold"], slide.get("headline_bottom", ""),
+                        logo_path, accent
+                    )
+                else:
+                    bg = slide.get("bg_image") or pick_background(slide.get("headline_gold", ""))
+                    html = generate_cover_slide(
+                        slide["headline_top"], slide["headline_gold"], slide.get("headline_bottom", ""),
+                        bg, logo_path, accent
+                    )
             elif slide_type == "data":
                 html = generate_data_slide(
                     slide["headline_gold"], slide["headline_white"], slide["bullets"],
@@ -487,16 +676,28 @@ async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]
                     logo_path, accent
                 )
             elif slide_type == "photo_data":
-                bg = slide.get("bg_image") or pick_background(slide.get("headline_gold", ""))
-                html = generate_photo_data_slide(
-                    slide["headline_gold"], slide["headline_white"], slide["bullets"],
-                    bg, logo_path, accent
-                )
+                if is_forza:
+                    # Forza has no photo variant — degrade to data slide, keeps type contract.
+                    html = generate_data_slide(
+                        slide["headline_gold"], slide["headline_white"], slide["bullets"],
+                        logo_path, accent
+                    )
+                else:
+                    bg = slide.get("bg_image") or pick_background(slide.get("headline_gold", ""))
+                    html = generate_photo_data_slide(
+                        slide["headline_gold"], slide["headline_white"], slide["bullets"],
+                        bg, logo_path, accent
+                    )
             elif slide_type == "cta":
-                html = generate_cta_slide(
-                    slide["cta_text"], slide.get("brand_name", brand_cfg["name"]),
-                    logo_path, accent
-                )
+                if is_forza:
+                    # Forza CTA has the F-chevron + wordmark built-in. Passing the
+                    # regular logo_forza.png would duplicate "FORZA" on the slide.
+                    html = generate_forza_cta_slide(slide["cta_text"], accent)
+                else:
+                    html = generate_cta_slide(
+                        slide["cta_text"], slide.get("brand_name", brand_cfg["name"]),
+                        logo_path, accent
+                    )
             else:
                 continue
 
