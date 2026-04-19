@@ -41,9 +41,58 @@ BRAND_CONTEXT = {
     "forza": {
         "name": "Forza",
         "handle": "@forza_ai_",
-        "audience": "Founders and owners of service businesses (real estate, clinics, law firms, recruitment, wealth, agencies). Revenue-generating, team-led, operationally bottlenecked.",
-        "tone": "Premium, operator-led, direct. No startup hype, no emojis, no exclamation marks. Classical serif confidence. Talks about systems, infrastructure, and operational leverage as facts — not pitches.",
-        "topics": "Revenue Infrastructure, Brand Infrastructure, Team Infrastructure, Founder Intelligence, lead follow-up, sub-minute response time, operator case studies, selective intake, systems vs staff, institutional outreach without BDRs, daily operating pictures",
+        "audience": (
+            "Founders and owners of growth-stage service businesses — real estate brokerages, "
+            "clinics (medical/dental/cosmetic), law firms, recruitment agencies, institutional "
+            "wealth/investment firms, car dealers, home services, creative agencies. "
+            "Revenue-generating, team-led, operationally bottlenecked. The founder is still the "
+            "chokepoint. They don't want more staff, they want the business to run without them."
+        ),
+        "tone": (
+            "Premium, operator-led, direct. No startup hype, no emojis, no exclamation marks. "
+            "Classical serif confidence — Cinzel headlines, Cormorant body. Reads like Goldman "
+            "Sachs meets Dubai operator. Short sentences. Concrete numbers. Zero marketing fluff. "
+            "Talks about systems, infrastructure, operational leverage as facts — never as pitches. "
+            "Assumes the reader is running a real business with real P&L, not a pre-revenue idea."
+        ),
+        "positioning": (
+            "Forza builds BUSINESS OPERATING SYSTEMS — custom AI-powered infrastructure that "
+            "handles revenue, brand, team, and founder intelligence. NOT chatbots. NOT automation. "
+            "NOT AI agency. We are operators who have run the playbook on our own businesses "
+            "(Dubai brokerage, ADGM institutional investment platform, property marketplace). "
+            "$5,000+ one-time Build, $1,000+/month Operate. Selective intake — small number of "
+            "engagements per quarter. Direct principal access, no account managers."
+        ),
+        "four_infrastructures": (
+            "1) Revenue Infrastructure: inbound lead capture (WhatsApp/IG/LinkedIn/web), sub-minute "
+            "response, qualification bot, CRM auto-routing, follow-up sequences, pipeline reporting. "
+            "2) Brand Infrastructure: autonomous content engine (like Mark itself), cross-platform "
+            "posting, daily/weekly cadence without an agency retainer. "
+            "3) Team Infrastructure: internal agent assistant (like Dave), SLA chasing, task "
+            "management, integrity checks, accountability loops without micromanagement. "
+            "4) Founder Intelligence: daily/twice-daily operating pictures, anomaly detection, "
+            "trend reports, decision-ready briefs delivered to the founder's phone."
+        ),
+        "topics": (
+            "Revenue Infrastructure, Brand Infrastructure, Team Infrastructure, Founder Intelligence, "
+            "sub-60-second follow-up, operator case studies from Dubai RE + ADGM + marketplace, "
+            "selective intake, systems vs hiring more staff, institutional outreach without a BDR "
+            "team, daily operating pictures, the four-hour follow-up rule, when growth becomes chaos, "
+            "the true cost of founder bandwidth, AI as operating leverage not automation"
+        ),
+        "proof_points": (
+            "Dubai Brokerage Platform (full Revenue + Team infra — 6-bot fleet), "
+            "Institutional Investment Platform (ADGM SPVs, family office outreach, daily briefs), "
+            "Property Marketplace Platform (instant valuations, lead routing, commission savings). "
+            "All operator-grade, all live, all GG's own businesses — not client case studies."
+        ),
+        "never_say": (
+            "NEVER use: 'AI agency', 'automation agency', 'chatbot', 'consultant', 'prompt engineer', "
+            "'ChatGPT', 'GPT wrapper', 'startup', 'disrupt', emojis, exclamation marks, 'revolutionary', "
+            "'game-changer', 'cutting-edge', 'leverage synergies', 'unlock potential'. "
+            "NEVER mention real client brand names. Case studies referred to neutrally: "
+            "'a Dubai brokerage', 'an institutional investment platform', 'a property marketplace'."
+        ),
         "cta": "Book a Systems Audit at forza-ai.com",
     },
 }
@@ -83,20 +132,22 @@ OUTPUT FORMAT — return ONLY valid JSON, no markdown:
 Use <span class="stat-highlight">TEXT</span> inside bullet strings to highlight key numbers in gold."""
 
 
-SUGGESTION_SYSTEM_PROMPT = """You are Mark, a creative marketing director for Nucassa's three brands in Dubai. You have your own brain and imagination — you don't just regurgitate news headlines. You use the news as INSPIRATION to create original, creative content angles that position each brand as a thought leader.
+SUGGESTION_SYSTEM_PROMPT = """You are Mark, a creative marketing director for four brands: three Nucassa brands in Dubai real estate + Forza (B2B consultancy selling business operating systems). You have your own brain and imagination — you don't just regurgitate news headlines. You use the news as INSPIRATION to create original, creative content angles that position each brand as a thought leader.
 
 YOUR CREATIVE PROCESS:
-1. Search the news to understand what's happening RIGHT NOW in Dubai/UAE (2026 only).
-2. Use that context to INSPIRE an original angle — don't just repackage the headline.
-3. Think like a luxury brand creative director: what would make someone stop scrolling?
-4. Mix data with storytelling. A stat alone is boring. A stat with a narrative is powerful.
+1. For Nucassa brands: search Dubai/UAE real estate news (2026 only) — DLD, CBRE/JLL/Knight Frank, Gulf News, Arabian Business.
+2. For Forza: search global operator / AI-in-business / service-business trends — McKinsey, HBR, Bain, a16z, ops benchmarks, BDR/SDR economics, service business M&A. NOT Dubai RE news (Forza is global B2B).
+3. Use that context to INSPIRE an original angle — don't just repackage the headline.
+4. Think like a luxury brand creative director: what would make someone stop scrolling?
+5. Mix data with storytelling. A stat alone is boring. A stat with a narrative is powerful.
 
 RULES:
 1. NEVER use 2025 data. Only 2026 or timeless insights.
 2. NEVER mention war, conflict, crashes, or negativity. Find the opportunity angle.
 3. Each suggestion should be 2-3 sentences: the creative angle and why it works for today.
 4. Be ORIGINAL — don't just say "Q1 data is out". Say something like "Why 29,000 first-time investors chose Dubai over every other city this quarter".
-5. Make each brand feel distinct — Nucassa RE is market authority, Holdings is institutional sophistication, ListR is disruptive and sharp.
+5. Make each brand feel distinct — Nucassa RE is market authority, Holdings is institutional sophistication, ListR is disruptive and sharp, Forza is operator-led systems thinking for founders drowning in growth chaos.
+6. For Forza specifically: never use the words chatbot, automation agency, AI agency, consultant, prompt engineer, startup, disrupt. Never use emojis or exclamation marks. Think Goldman Sachs sales memo, not SaaS launch tweet.
 
 OUTPUT FORMAT — return ONLY valid JSON:
 {
