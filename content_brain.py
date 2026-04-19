@@ -149,12 +149,13 @@ RULES:
 5. Make each brand feel distinct — Nucassa RE is market authority, Holdings is institutional sophistication, ListR is disruptive and sharp, Forza is operator-led systems thinking for founders drowning in growth chaos.
 6. For Forza specifically: never use the words chatbot, automation agency, AI agency, consultant, prompt engineer, startup, disrupt. Never use emojis or exclamation marks. Think Goldman Sachs sales memo, not SaaS launch tweet.
 
-OUTPUT FORMAT — return ONLY valid JSON:
+OUTPUT FORMAT — return ONLY valid JSON, include ALL FOUR brands:
 {
   "suggestions": [
     {"brand": "nucassa_re", "topic": "...", "angle": "2-3 sentence creative pitch"},
     {"brand": "nucassa_holdings", "topic": "...", "angle": "2-3 sentence creative pitch"},
-    {"brand": "listr", "topic": "...", "angle": "2-3 sentence creative pitch"}
+    {"brand": "listr", "topic": "...", "angle": "2-3 sentence creative pitch"},
+    {"brand": "forza", "topic": "...", "angle": "2-3 sentence creative pitch"}
   ]
 }"""
 
@@ -295,15 +296,21 @@ async def get_morning_suggestions() -> dict:
 
     prompt = f"""Today is {today} (Dubai time).
 
-Search for the latest Dubai and UAE real estate news, economic data, and market developments.
-Focus on 2026 data only. Find what is happening RIGHT NOW that each brand can create content about.
+You manage FOUR brands. Search the news to ground each suggestion in something real from 2026.
+
+For the three Nucassa brands: search Dubai / UAE real estate news, economic data, market reports, geopolitics — DLD, CBRE/JLL/Knight Frank/Savills, Gulf News, Arabian Business, Bloomberg Middle East.
+
+For Forza: search global operator / AI-in-business / service-business / founder-ops news — McKinsey, HBR, Bain, a16z, service-business benchmarks, BDR/SDR economics, hiring vs systems trade-offs, AI-in-ops case studies. NOT Dubai RE.
 
 Brand contexts:
 - Nucassa Real Estate (@nucassadubai): Property market data, transactions, areas, buyer guides
 - Nucassa Holdings (@nucassaholdings_ltd): Institutional investment, family offices, ADGM/DIFC, macro
 - ListR.ae (@listr.ae): Property marketplace, fee disruption, buyer/seller empowerment
+- Forza (@forza_ai_): Business operating systems for growth-stage service companies. Custom AI infrastructure for revenue, brand, team, founder intelligence. Audience: founders of brokerages, clinics, law firms, recruitment, institutional investment, agencies. Operator-led, premium, no startup hype, no emojis.
 
-Suggest ONE topic per brand with a clear angle. Each suggestion should explain WHY this is the right topic for today."""
+Suggest ONE topic per brand with a clear angle. Each suggestion should explain WHY this is the right topic for today.
+
+OUTPUT ALL FOUR BRANDS. Do not skip Forza."""
 
     try:
         async with httpx.AsyncClient(timeout=90) as client:
