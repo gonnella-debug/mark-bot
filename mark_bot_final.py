@@ -1664,22 +1664,41 @@ async def upload_image_to_ig(ig_account_id: str, image_bytes: bytes, caption: st
     if caption and not is_carousel_item:
         params["caption"] = caption
 
+    last_error = None
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             for attempt in range(3):
                 r = await client.post(upload_url, params=params)
-                data = r.json()
+                try:
+                    data = r.json()
+                except Exception:
+                    data = {"raw": r.text[:300]}
                 if "id" in data:
                     return data["id"]
-                if r.status_code == 500:
-                    log.warning(f"IG upload 500, retry {attempt+1}/3...")
+                # Pull Meta's actual error detail out — this is what we need to see
+                err = data.get("error") or data
+                code = err.get("code") if isinstance(err, dict) else None
+                subcode = err.get("error_subcode") if isinstance(err, dict) else None
+                msg = err.get("message") or err.get("raw") or str(err) if isinstance(err, dict) else str(err)
+                fbtrace = err.get("fbtrace_id") if isinstance(err, dict) else None
+                last_error = f"code={code} subcode={subcode} status={r.status_code} ig={ig_account_id} msg={msg}"
+                log.error(f"[IG upload attempt {attempt+1}/3] {last_error} trace={fbtrace} url={image_url}")
+                if r.status_code == 500 and attempt < 2:
                     await asyncio.sleep(3 + attempt * 2)
                     continue
-                log.error(f"IG upload error: {data}")
-                return None
+                # Non-500 errors are unlikely to fix themselves on retry
+                if r.status_code != 500:
+                    break
     except Exception as e:
+        last_error = f"exception {type(e).__name__}: {e}"
         log.error(f"IG upload exception: {e}")
+    # Surface the last error back to Telegram via the caller so GG sees it
+    global _last_ig_upload_error
+    _last_ig_upload_error = last_error
     return None
+
+
+_last_ig_upload_error: str = ""
 
 
 async def publish_ig_carousel(ig_account_id: str, container_ids: list[str], caption: str) -> dict:
@@ -2180,10 +2199,12 @@ async def post_content(content: dict, brand: str) -> dict:
                         break
                     await asyncio.sleep(1)
                 if failed_slide:
-                    results["instagram"] = {"error": f"Slide {failed_slide} upload failed after 3 retries — carousel aborted to avoid partial post"}
+                    err_detail = _last_ig_upload_error or "no detail captured"
+                    results["instagram"] = {"error": f"Slide {failed_slide} upload failed after 3 retries — carousel aborted to avoid partial post: {err_detail}"}
                     await send_telegram(
                         f"⚠️ *{BRANDS[brand]['name']} — IG carousel aborted*\n"
-                        f"Slide {failed_slide} failed after 3 retries. Not posting partial carousel."
+                        f"Slide {failed_slide} failed after 3 retries. Not posting partial carousel.\n\n"
+                        f"`{err_detail[:400]}`"
                     )
                 elif len(container_ids) == len(images):
                     results["instagram"] = await publish_ig_carousel(ig_account_id, container_ids, ig_caption)
