@@ -423,6 +423,7 @@ async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]
         "nucassa_re": {"logo": str(ASSETS_DIR / "logo_nucassa.png"), "accent": "#C9A06C", "name": "NUCASSA"},
         "nucassa_holdings": {"logo": str(ASSETS_DIR / "logo_nucassa.png"), "accent": "#C9A06C", "name": "NUCASSA HOLDINGS LTD"},
         "listr": {"logo": str(ASSETS_DIR / "logo_listr.png"), "accent": "#B8962E", "name": "LISTR.AE"},
+        "forza": {"logo": str(ASSETS_DIR / "logo_forza.png"), "accent": "#C5A86C", "name": "FORZA"},
     }
     brand_cfg = BRAND_ASSETS.get(brand, BRAND_ASSETS["nucassa_re"])
     logo_path = brand_cfg["logo"]

@@ -113,17 +113,23 @@ GDRIVE_MARKETING_BRAND_FOLDERS = {
     "nucassa_re": "1h9-rHbwy_u781I5JK9AfC9Ig4UGgJ9lV",
     "nucassa_holdings": "1jZXVpp4zxKD4my1CU2NBEerlH81iNpJ2",
     "listr": "1DTSCTvgN_nMR9Wn71vzGHphF8QKXfZbM",
+    "forza": os.getenv("GDRIVE_FORZA_FOLDER", ""),   # set when Drive folder created
 }
 
 # Instagram Account IDs (from Meta Business Manager)
 IG_NUCASSA_RE       = "17841457839005074"   # @nucassadubai
 IG_HOLDINGS         = "17841406888818689"   # @nucassaholdings_ltd
 IG_LISTR            = "17841475489496432"   # @listr.ae
+IG_FORZA            = os.getenv("IG_FORZA", "")      # @forza_ai — set when IG account created
 
 # Facebook Page IDs
 FB_NUCASSA_RE       = "106173405736149"     # Nucassa Real Estate Dubai
 FB_HOLDINGS         = "963897483477807"     # Nucassa.Holdings
 FB_LISTR            = "1085489144643633"    # ListR
+FB_FORZA            = os.getenv("FB_FORZA", "")      # Forza Systems — set when FB page created
+
+# LinkedIn Forza Page ID
+LI_FORZA_PAGE       = os.getenv("LI_FORZA_PAGE", "") # set when LinkedIn company page created
 
 # Railway public URL for LinkedIn OAuth callback
 RAILWAY_URL         = os.getenv("RAILWAY_URL", "https://mark-bot.up.railway.app")
@@ -237,6 +243,46 @@ BRANDS = {
         ],
         "posting_weekdays": [1, 3, 5],  # Tue Thu Sat
         "post_hour_utc": 14,             # 6pm Dubai
+    },
+    "forza": {
+        "name": "Forza",
+        "handle": "@forza.ai",
+        "website": "forza-ai.com",
+        "platforms": ["linkedin", "instagram", "facebook"],  # LinkedIn primary for B2B
+        "ig_account_id": IG_FORZA,
+        "fb_page_id": FB_FORZA,
+        "li_page_id": LI_FORZA_PAGE,
+        "li_personal_accounts": ["gg"],
+        "tone": (
+            "premium, operator-led, direct. No startup hype, no emojis, no exclamation marks. "
+            "Classical serif confidence. Talks about systems, infrastructure, operational leverage. "
+            "Goldman Sachs meets Dubai operator. Assumes the reader is running a real business."
+        ),
+        "cta": "Book a Systems Audit at forza-ai.com",
+        "color_primary": "#0A0A0A",      # ink black
+        "color_accent":  "#C5A86C",      # rich gold
+        "color_secondary": "#F7F3EA",    # ivory
+        "font_headline": "Cinzel SemiBold",
+        "font_body": "Inter Medium",
+        "logo_style": "forza",
+        "topics": [
+            "The four-hour follow-up rule — why it quietly kills deals",
+            "Revenue Infrastructure — the five layers every serious business needs",
+            "Why AI operations beat a growing SDR team on cost and consistency",
+            "What a Systems Audit actually reveals about your business",
+            "From WhatsApp chaos to CRM clarity — a real operator case study",
+            "The hidden cost of founder bandwidth — numbers most operators ignore",
+            "Operating Pictures — why serious founders get briefed twice a day",
+            "Sub-60-second response time — what it changes for your pipeline",
+            "The case for selective intake — why we take fewer clients by design",
+            "Institutional outreach without a BDR team on payroll",
+            "Instant property valuations as a marketplace differentiator",
+            "Brand Infrastructure — daily content without an agency retainer",
+            "Team discipline without micromanagement — how the system runs it",
+            "When growth becomes chaos — the operator's decision matrix",
+        ],
+        "posting_weekdays": [1, 3],      # Tue / Thu — B2B cadence, less noisy
+        "post_hour_utc": 13,             # 5pm Dubai — late-afternoon decision-maker scroll
     },
 }
 

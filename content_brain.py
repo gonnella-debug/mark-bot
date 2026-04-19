@@ -38,6 +38,14 @@ BRAND_CONTEXT = {
         "topics": "Commission savings, direct buyer-seller, verified listings, RERA, secondary market, fee comparison, agent empowerment (90% commission)",
         "cta": "Sign up free at ListR.ae",
     },
+    "forza": {
+        "name": "Forza",
+        "handle": "@forza.ai",
+        "audience": "Founders and owners of service businesses (real estate, clinics, law firms, recruitment, wealth, agencies). Revenue-generating, team-led, operationally bottlenecked.",
+        "tone": "Premium, operator-led, direct. No startup hype, no emojis, no exclamation marks. Classical serif confidence. Talks about systems, infrastructure, and operational leverage as facts — not pitches.",
+        "topics": "Revenue Infrastructure, Brand Infrastructure, Team Infrastructure, Founder Intelligence, lead follow-up, sub-minute response time, operator case studies, selective intake, systems vs staff, institutional outreach without BDRs, daily operating pictures",
+        "cta": "Book a Systems Audit at forza-ai.com",
+    },
 }
 
 CONTENT_SYSTEM_PROMPT = """You are Mark, the autonomous marketing brain for Nucassa's three brands. You create Instagram carousel content that is factual, data-driven, and matches the premium dark aesthetic of the brand.
