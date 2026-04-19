@@ -246,7 +246,7 @@ BRANDS = {
     },
     "forza": {
         "name": "Forza",
-        "handle": "@forza.ai",
+        "handle": "@forza_ai_",
         "website": "forza-ai.com",
         "platforms": ["linkedin", "instagram", "facebook"],  # LinkedIn primary for B2B
         "ig_account_id": IG_FORZA,

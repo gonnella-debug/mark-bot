@@ -40,7 +40,7 @@ BRAND_CONTEXT = {
     },
     "forza": {
         "name": "Forza",
-        "handle": "@forza.ai",
+        "handle": "@forza_ai_",
         "audience": "Founders and owners of service businesses (real estate, clinics, law firms, recruitment, wealth, agencies). Revenue-generating, team-led, operationally bottlenecked.",
         "tone": "Premium, operator-led, direct. No startup hype, no emojis, no exclamation marks. Classical serif confidence. Talks about systems, infrastructure, and operational leverage as facts — not pitches.",
         "topics": "Revenue Infrastructure, Brand Infrastructure, Team Infrastructure, Founder Intelligence, lead follow-up, sub-minute response time, operator case studies, selective intake, systems vs staff, institutional outreach without BDRs, daily operating pictures",
