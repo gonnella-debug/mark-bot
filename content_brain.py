@@ -13,6 +13,66 @@ log = logging.getLogger(__name__)
 
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
 
+# ============================================================================
+# FORZA LAUNCH MODE — first 30 days (2026-04-19 → 2026-05-19) focuses ALL
+# Forza content on promoting services, not reacting to news. After the launch
+# window, Forza can pivot to news-aware content alongside service promotion.
+# ============================================================================
+
+FORZA_LAUNCH_STARTED = "2026-04-19"
+FORZA_LAUNCH_WINDOW_DAYS = 30
+
+FORZA_LAUNCH_TOPIC_BANK = [
+    # ── THE FOUR INFRASTRUCTURES (weeks 1-2 focus) ──
+    "Revenue Infrastructure — what it actually does: 24/7 inbound, sub-60s response, qualification, routing",
+    "Brand Infrastructure — autonomous content production across every platform, no agency retainer",
+    "Team Infrastructure — real-time CRM monitoring and accountability without the founder chasing anyone",
+    "Founder Intelligence — twice-daily operating pictures: what happened, what's broken, what needs you",
+    # ── SERVICE DEPTH (week 2-3) ──
+    "What a Systems Audit reveals in 30 minutes (the free first step)",
+    "The 30-day Build: week-by-week breakdown from audit to live production",
+    "Build + Operate pricing model — $5k+ Build, $1k+/mo Operate, why both matter",
+    "Selective intake — why we run a small number of engagements per quarter",
+    "Direct principal access — no account managers, no handoffs",
+    "Client owns the data — your WABA, your CRM, your Meta pages",
+    # ── INDUSTRY POSITIONING (week 3-4) ──
+    "Forza for brokerages — inbound capture, agent accountability, marketing engine",
+    "Forza for clinics — appointment follow-up, review requests, no-show reduction",
+    "Forza for law firms — intake qualification, matter updates, accountability",
+    "Forza for recruitment — candidate and client dual-channel follow-up at scale",
+    "Forza for institutional wealth — LP outreach, reporting cadence, compliance-aware ops",
+    "Forza for agencies — internal project accountability and client content engine",
+    # ── CORE ARGUMENTS (ongoing) ──
+    "The four-hour follow-up rule — why it quietly kills deals",
+    "Systems over staff — where the maths actually works",
+    "Sub-60-second response time — what it changes for your pipeline",
+    "From WhatsApp chaos to CRM clarity — operator case study arc",
+    "Institutional outreach without a BDR team on payroll",
+    "Daily content without an agency retainer — how the infrastructure does it",
+    "The hidden cost of founder bandwidth — numbers most operators ignore",
+    "When growth becomes chaos — the operator's decision matrix",
+    # ── PROOF POINTS (anonymised — NEVER use client brand names) ──
+    "Dubai Brokerage Platform — the operator's own revenue + team infrastructure stack",
+    "Institutional Investment Platform — ADGM outreach engine without BDRs",
+    "Property Marketplace Platform — instant valuations and lead routing",
+    # ── PHILOSOPHY (ongoing) ──
+    "Why we don't call ourselves an AI agency",
+    "Operators, not consultants — the engagement model that follows",
+    "Built to last, not to onboard fast — why our clients don't churn",
+]
+
+
+def is_forza_launch_mode() -> bool:
+    """True for the first 30 days after launch. Forza content stays service-promotion only."""
+    from datetime import date
+    try:
+        start = datetime.strptime(FORZA_LAUNCH_STARTED, "%Y-%m-%d").date()
+    except Exception:
+        return False
+    elapsed = (date.today() - start).days
+    return 0 <= elapsed <= FORZA_LAUNCH_WINDOW_DAYS
+
+
 BRAND_CONTEXT = {
     "nucassa_re": {
         "name": "Nucassa Real Estate",
@@ -211,7 +271,43 @@ ALREADY POSTED IN THE LAST 7 DAYS — DO NOT REPEAT OR PARAPHRASE ANY OF THESE:
 If you can only find a similar angle, find a NEW data point, NEW comparison, or NEW vertical within the brand's topic space. Repetition kills engagement — your topic must feel fresh next to the recent posts above.
 """
 
-    search_prompt = f"""Today is {today} (Dubai time).
+    # Forza in launch mode: promote services, never search news. Pick a topic
+    # from the launch bank (deduped against recent posts) and generate the
+    # carousel off Forza's knowledge — no web search.
+    forza_launch = (brand == "forza" and is_forza_launch_mode())
+
+    if forza_launch:
+        available_topics = [t for t in FORZA_LAUNCH_TOPIC_BANK if t not in recent_topics]
+        if not available_topics:
+            available_topics = FORZA_LAUNCH_TOPIC_BANK  # fall back if we've somehow cycled through
+        topic_bank_block = "\n".join(f"  - {t}" for t in available_topics)
+        search_prompt = f"""Today is {today} (Dubai time).
+
+Brand: {brand_ctx['name']} ({brand_ctx['handle']})
+Audience: {brand_ctx['audience']}
+Tone: {brand_ctx['tone']}
+Positioning: {brand_ctx.get('positioning', '')}
+Four Infrastructures: {brand_ctx.get('four_infrastructures', '')}
+Proof points: {brand_ctx.get('proof_points', '')}
+Never say: {brand_ctx.get('never_say', '')}
+CTA: {brand_ctx['cta']}
+{dedup_block}
+
+LAUNCH MODE (first 30 days from {FORZA_LAUNCH_STARTED}): Forza is a brand-new venture. The goal right now is to PROMOTE THE SERVICES WE OFFER — not to react to news, not to comment on the market, not to ride trends. Every post must explain, illustrate, or argue for ONE of Forza's services or philosophies.
+
+DO NOT use web search. DO NOT cite news. DO NOT reference current events. Work only from the brand knowledge above.
+
+{"Specific topic requested: " + specific_topic if specific_topic else "Pick ONE topic from this service-promotion bank that hasn't been posted yet, and create a 4-slide carousel that sells/explains that service with concrete depth:"}
+
+TOPIC BANK:
+{topic_bank_block}
+
+Build a 4-slide carousel with the Forza tone (no emojis, no exclamation marks, no startup hype, no 'game-changer', no 'leverage', no 'disrupt'). Use specific numbers from the brand knowledge where relevant (pricing tiers, 30-day Build timeline, sub-60s response, 500 daily outbound limits, four infrastructures). The CTA on slide 4 should always be a direct Systems Audit booking, not a vague 'learn more'.
+
+Return ONLY the JSON structure described in your instructions."""
+        use_web_search = False
+    else:
+        search_prompt = f"""Today is {today} (Dubai time).
 
 Brand: {brand_ctx['name']} ({brand_ctx['handle']})
 Audience: {brand_ctx['audience']}
@@ -231,8 +327,18 @@ Then create a 4-slide Instagram carousel that is factual and data-driven.
 If the market is down, don't pretend it's up — find the honest angle that still serves the brand.
 
 Return ONLY the JSON structure described in your instructions."""
+        use_web_search = True
 
     try:
+        request_body = {
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 4096,
+            "system": CONTENT_SYSTEM_PROMPT,
+            "messages": [{"role": "user", "content": search_prompt}],
+        }
+        if use_web_search:
+            request_body["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
+
         async with httpx.AsyncClient(timeout=90) as client:
             resp = await client.post(
                 "https://api.anthropic.com/v1/messages",
@@ -241,13 +347,7 @@ Return ONLY the JSON structure described in your instructions."""
                     "anthropic-version": "2023-06-01",
                     "content-type": "application/json",
                 },
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 4096,
-                    "system": CONTENT_SYSTEM_PROMPT,
-                    "messages": [{"role": "user", "content": search_prompt}],
-                    "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}],
-                },
+                json=request_body,
             )
 
             if resp.status_code != 200:
@@ -294,19 +394,37 @@ async def get_morning_suggestions() -> dict:
     """
     today = datetime.now(timezone(timedelta(hours=4))).strftime("%A %d %B %Y")
 
+    forza_launch = is_forza_launch_mode()
+    forza_recent = _load_recent_topics("forza", days=7)
+    forza_available = [t for t in FORZA_LAUNCH_TOPIC_BANK if t not in forza_recent]
+    if not forza_available:
+        forza_available = FORZA_LAUNCH_TOPIC_BANK
+    forza_bank_block = "\n".join(f"  - {t}" for t in forza_available[:20])
+
+    forza_instruction = (
+        f"""For Forza (LAUNCH MODE — first 30 days from {FORZA_LAUNCH_STARTED}): Do NOT search news. Do NOT react to current events. Forza is a brand-new venture — every post must PROMOTE A SERVICE or argue for an operating philosophy. Pick ONE unposted topic from the Forza topic bank below and explain WHY it's the right service-focused post to push today (e.g. week 1 = the four infrastructures, week 2 = process + pricing, week 3 = vertical fit, week 4 = philosophy and proof points).
+
+FORZA TOPIC BANK (pick one not in last 7 days' posts):
+{forza_bank_block}
+"""
+        if forza_launch
+        else
+        "For Forza: search global operator / AI-in-business / service-business / founder-ops news — McKinsey, HBR, Bain, a16z, service-business benchmarks, BDR/SDR economics, hiring vs systems trade-offs."
+    )
+
     prompt = f"""Today is {today} (Dubai time).
 
-You manage FOUR brands. Search the news to ground each suggestion in something real from 2026.
+You manage FOUR brands. The three Nucassa brands ride today's news. Forza does NOT (it's in launch mode).
 
 For the three Nucassa brands: search Dubai / UAE real estate news, economic data, market reports, geopolitics — DLD, CBRE/JLL/Knight Frank/Savills, Gulf News, Arabian Business, Bloomberg Middle East.
 
-For Forza: search global operator / AI-in-business / service-business / founder-ops news — McKinsey, HBR, Bain, a16z, service-business benchmarks, BDR/SDR economics, hiring vs systems trade-offs, AI-in-ops case studies. NOT Dubai RE.
+{forza_instruction}
 
 Brand contexts:
 - Nucassa Real Estate (@nucassadubai): Property market data, transactions, areas, buyer guides
 - Nucassa Holdings (@nucassaholdings_ltd): Institutional investment, family offices, ADGM/DIFC, macro
 - ListR.ae (@listr.ae): Property marketplace, fee disruption, buyer/seller empowerment
-- Forza (@forza_ai_): Business operating systems for growth-stage service companies. Custom AI infrastructure for revenue, brand, team, founder intelligence. Audience: founders of brokerages, clinics, law firms, recruitment, institutional investment, agencies. Operator-led, premium, no startup hype, no emojis.
+- Forza (@forza_ai_): Business operating systems for growth-stage service companies. First 30 days = pure service promotion. Audience: founders of brokerages, clinics, law firms, recruitment, institutional investment, agencies. Operator-led, premium, no startup hype, no emojis, no exclamation marks.
 
 Suggest ONE topic per brand with a clear angle. Each suggestion should explain WHY this is the right topic for today.
 
