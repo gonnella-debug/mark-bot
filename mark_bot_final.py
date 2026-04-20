@@ -247,7 +247,7 @@ BRANDS = {
     "forza": {
         "name": "Forza",
         "handle": "@forza_ai_",
-        "website": "forza-ai.com",
+        "website": "forzasystems.ai",
         "platforms": ["linkedin", "instagram", "facebook"],  # LinkedIn primary for B2B
         "ig_account_id": IG_FORZA,
         "fb_page_id": FB_FORZA,
@@ -258,7 +258,7 @@ BRANDS = {
             "Classical serif confidence. Talks about systems, infrastructure, operational leverage. "
             "Goldman Sachs meets Dubai operator. Assumes the reader is running a real business."
         ),
-        "cta": "Book a Systems Audit at forza-ai.com",
+        "cta": "Book a Systems Audit at forzasystems.ai",
         "color_primary": "#0A0A0A",      # ink black
         "color_accent":  "#C5A86C",      # rich gold
         "color_secondary": "#F7F3EA",    # ivory
@@ -332,7 +332,7 @@ BRANDS:
    Institutional investment platform. ADGM SPV. $1M+ investors. DBS custody.
 3. ListR.ae (@listr.ae) — ListR.ae
    UAE property marketplace. No agency fees. Direct buyer-seller deals.
-4. Forza (@forza_ai_) — forza-ai.com
+4. Forza (@forza_ai_) — forzasystems.ai
    Business operating systems for growth-stage service companies. Custom AI infrastructure for revenue, brand, team, and founder intelligence. Audience: founders of brokerages, clinics, law firms, recruitment, institutional investment, agencies. NOT Dubai RE — global B2B consultancy. Operator-led tone. NEVER say chatbot, automation agency, AI agency, consultant, startup, disrupt. NEVER use emojis or exclamation marks. Think Goldman Sachs sales memo, not SaaS launch tweet.
 
 FORZA VISUAL BRAND:
