@@ -58,20 +58,33 @@ LI_CLIENT_ID            = os.getenv("LI_CLIENT_ID", "")
 LI_CLIENT_SECRET        = os.getenv("LI_CLIENT_SECRET", "")
 LI_FORZA_CLIENT_ID      = os.getenv("LI_FORZA_CLIENT_ID", "")
 LI_FORZA_CLIENT_SECRET  = os.getenv("LI_FORZA_CLIENT_SECRET", "")
+# Separate app dedicated to Community Management API (LinkedIn requires CMA be the ONLY product on its app)
+LI_FORZA_CMA_CLIENT_ID      = os.getenv("LI_FORZA_CMA_CLIENT_ID", "")
+LI_FORZA_CMA_CLIENT_SECRET  = os.getenv("LI_FORZA_CMA_CLIENT_SECRET", "")
 LI_NUCASSA_RE_PAGE      = os.getenv("LI_NUCASSA_RE_PAGE", "90919312")
 LI_HOLDINGS_PAGE        = os.getenv("LI_HOLDINGS_PAGE", "109941216")
 LI_SCOPE                = os.getenv("LI_SCOPE", "w_member_social")
 LI_TOKENS_FILE          = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "li_tokens.json")
 
-# Accounts auth'd via the Forza LinkedIn Developer App (everything else uses the Nucassa app)
-LI_FORZA_ACCOUNTS = {"sue", "gg_forza"}
+# Three LinkedIn apps: Nucassa (gg/emma), Forza personal (sue), Forza CMA-only (sue_cma for company page)
+LI_FORZA_ACCOUNTS      = {"sue"}             # Forza personal app (Share + OIDC)
+LI_FORZA_CMA_ACCOUNTS  = {"sue_cma"}         # Forza CMA-only app (w_organization_social only)
 
 
 def _li_app_creds(account: str) -> tuple[str, str]:
     """Return (client_id, client_secret) for the LinkedIn app that owns this account's OAuth."""
+    if account in LI_FORZA_CMA_ACCOUNTS:
+        return LI_FORZA_CMA_CLIENT_ID, LI_FORZA_CMA_CLIENT_SECRET
     if account in LI_FORZA_ACCOUNTS:
         return LI_FORZA_CLIENT_ID, LI_FORZA_CLIENT_SECRET
     return LI_CLIENT_ID, LI_CLIENT_SECRET
+
+
+def _li_scope_for(account: str) -> str:
+    """Return the OAuth scope string for this account's app."""
+    if account in LI_FORZA_CMA_ACCOUNTS:
+        return "w_organization_social"  # CMA-only app: nothing else is allowed
+    return LI_SCOPE
 
 def _load_li_tokens() -> dict:
     """Load per-account LinkedIn tokens from persistent volume, fall back to env vars."""
@@ -264,8 +277,8 @@ BRANDS = {
         "ig_account_id": IG_FORZA,
         "fb_page_id": FB_FORZA,
         "li_page_id": LI_FORZA_PAGE,
-        "li_admin_account": "sue",  # Sue is admin of the Forza company page — and also the personal cross-post target
-        "li_personal_accounts": ["sue"],
+        "li_admin_account": "sue_cma",   # Forza company page via dedicated CMA-only app
+        "li_personal_accounts": ["sue"], # Sue's personal feed via the other Forza app
         "tone": (
             "premium, operator-led, direct. No startup hype, no emojis, no exclamation marks. "
             "Classical serif confidence. Talks about systems, infrastructure, operational leverage. "
@@ -1845,24 +1858,25 @@ async def linkedin_auth_start(account: str = "gg"):
     """Start LinkedIn OAuth for a specific account. Visit while logged in as that person.
       /linkedin/auth?account=gg         — Nucassa app, admin of Nucassa pages
       /linkedin/auth?account=emma       — Nucassa app, Emma's personal (cross-posts Holdings)
-      /linkedin/auth?account=sue        — Forza app, Sue's personal (cross-posts Forza)
-      /linkedin/auth?account=gg_forza   — Forza app, GG as admin of Forza company page
+      /linkedin/auth?account=sue        — Forza personal app, Sue's feed (cross-posts Forza)
+      /linkedin/auth?account=sue_cma    — Forza CMA-only app, Sue admin → Forza company page
     """
     account = account.lower().strip()
-    if account not in ("gg", "emma", "sue", "gg_forza"):
-        return JSONResponse({"error": f"Unknown account '{account}' — use gg, emma, sue, or gg_forza"})
+    if account not in ("gg", "emma", "sue", "sue_cma"):
+        return JSONResponse({"error": f"Unknown account '{account}' — use gg, emma, sue, or sue_cma"})
     client_id, _ = _li_app_creds(account)
     if not client_id:
-        return JSONResponse({"error": f"No LinkedIn client_id configured for {account} — set LI_FORZA_CLIENT_ID env var" if account in LI_FORZA_ACCOUNTS else "No LI_CLIENT_ID env var"})
+        return JSONResponse({"error": f"No LinkedIn client_id configured for {account}"})
     state = str(uuid.uuid4())
     li_oauth_states[state] = {"account": account}
+    scope = _li_scope_for(account)
     auth_url = (
         f"https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code"
         f"&client_id={client_id}"
         f"&redirect_uri={RAILWAY_URL}/linkedin/callback"
         f"&state={state}"
-        f"&scope={LI_SCOPE.replace(' ', '%20')}"
+        f"&scope={scope.replace(' ', '%20')}"
     )
     return RedirectResponse(auth_url)
 
@@ -1929,7 +1943,7 @@ async def linkedin_auth_callback(code: str = None, state: str = None, error: str
             "person_id": person_id,
             "expiry": int(time.time()) + expires_in,
             "name": person_name,
-            "app": "forza" if account in LI_FORZA_ACCOUNTS else "nucassa",
+            "app": "forza_cma" if account in LI_FORZA_CMA_ACCOUNTS else ("forza" if account in LI_FORZA_ACCOUNTS else "nucassa"),
         }
         _save_li_tokens()
 
@@ -2887,7 +2901,7 @@ async def api_status():
                 "name": LI_TOKENS.get(a, {}).get("name", ""),
                 "person_id": LI_TOKENS.get(a, {}).get("person_id", ""),
                 "app": LI_TOKENS.get(a, {}).get("app", "?"),
-            } for a in ("gg", "emma", "sue", "gg_forza")
+            } for a in ("gg", "emma", "sue", "sue_cma")
         },
         "pending_approvals": len(pending_approvals),
         "brands": status,
