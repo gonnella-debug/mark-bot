@@ -1929,70 +1929,61 @@ async def linkedin_auth_callback(code: str = None, state: str = None, error: str
 
 
 async def upload_image_to_li(image_bytes: bytes, owner_urn: str, access_token: str) -> str | None:
-    """Register + upload an image to LinkedIn. Owner is either urn:li:person:{id} or urn:li:organization:{id}."""
+    """Upload image via Versioned /rest/images API. Returns urn:li:image:..."""
     if not access_token:
         return None
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
-                "https://api.linkedin.com/v2/assets?action=registerUpload",
-                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
-                json={
-                    "registerUploadRequest": {
-                        "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
-                        "owner": owner_urn,
-                        "serviceRelationships": [{"relationshipType": "OWNER", "identifier": "urn:li:userGeneratedContent"}],
-                    }
-                },
+                "https://api.linkedin.com/rest/images?action=initializeUpload",
+                headers=_li_versioned_headers(access_token),
+                json={"initializeUploadRequest": {"owner": owner_urn}},
             )
-            data = r.json()
-            upload_url = data["value"]["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"]
-            asset = data["value"]["asset"]
-
-            r2 = await client.put(
-                upload_url,
-                headers={"Authorization": f"Bearer {access_token}"},
-                content=image_bytes,
-            )
+            if r.status_code not in (200, 201):
+                log.error(f"LI image init HTTP {r.status_code} ({owner_urn}): {r.text[:300]}")
+                return None
+            value = (r.json() or {}).get("value") or {}
+            upload_url = value.get("uploadUrl")
+            img_urn = value.get("image")
+            if not upload_url or not img_urn:
+                log.error(f"LI image init missing fields ({owner_urn}): {value}")
+                return None
+            r2 = await client.put(upload_url, content=image_bytes)
             if r2.status_code in (200, 201):
-                return asset
+                return img_urn
+            log.error(f"LI image PUT HTTP {r2.status_code} ({owner_urn}): {r2.text[:200]}")
     except Exception as e:
         log.error(f"LI image upload error ({owner_urn}): {e}")
     return None
 
 
 async def _li_post(author_urn: str, access_token: str, asset: str | None, caption: str) -> dict:
-    """Low-level: POST a ugcPost as the given author URN with the given access token."""
+    """Publish a single-image (or text-only) post via Versioned /rest/posts API."""
     post_body = {
         "author": author_urn,
-        "lifecycleState": "PUBLISHED",
-        "specificContent": {
-            "com.linkedin.ugc.ShareContent": {
-                "shareCommentary": {"text": caption},
-                "shareMediaCategory": "IMAGE" if asset else "NONE",
-            }
+        "commentary": caption or "",
+        "visibility": "PUBLIC",
+        "distribution": {
+            "feedDistribution": "MAIN_FEED",
+            "targetEntities": [],
+            "thirdPartyDistributionChannels": [],
         },
-        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+        "lifecycleState": "PUBLISHED",
+        "isReshareDisabledByAuthor": False,
     }
     if asset:
-        post_body["specificContent"]["com.linkedin.ugc.ShareContent"]["media"] = [{
-            "status": "READY",
-            "description": {"text": caption[:200]},
-            "media": asset,
-            "title": {"text": ""},
-        }]
+        post_body["content"] = {"media": {"id": asset, "title": ""}}
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
-                "https://api.linkedin.com/v2/ugcPosts",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json",
-                    "X-Restli-Protocol-Version": "2.0.0",
-                },
+                "https://api.linkedin.com/rest/posts",
+                headers=_li_versioned_headers(access_token),
                 json=post_body,
             )
-            return r.json()
+            if r.status_code in (200, 201):
+                post_id = r.headers.get("x-restli-id") or r.headers.get("X-RestLi-Id") or ""
+                return {"id": post_id, "status": r.status_code}
+            return {"error": f"LI posts HTTP {r.status_code}: {r.text[:300]}"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -2030,69 +2021,79 @@ def _images_to_pdf_bytes(images_bytes_list: list) -> bytes:
     return buf.getvalue()
 
 
+LI_API_VERSION = os.getenv("LI_API_VERSION", "202404")  # LinkedIn Versioned API month
+
+
+def _li_versioned_headers(access_token: str) -> dict:
+    return {
+        "Authorization": f"Bearer {access_token}",
+        "LinkedIn-Version": LI_API_VERSION,
+        "X-Restli-Protocol-Version": "2.0.0",
+        "Content-Type": "application/json",
+    }
+
+
 async def _upload_pdf_to_li(pdf_bytes: bytes, owner_urn: str, access_token: str) -> str | None:
-    """Register + upload a PDF document (carousel) to LinkedIn. Returns asset URN."""
+    """Upload PDF doc via LinkedIn Versioned /rest/documents API. Returns urn:li:document:..."""
     if not access_token:
         return None
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             r = await client.post(
-                "https://api.linkedin.com/v2/assets?action=registerUpload",
-                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
-                json={
-                    "registerUploadRequest": {
-                        "recipes": ["urn:li:digitalmediaRecipe:feedshare-document"],
-                        "owner": owner_urn,
-                        "serviceRelationships": [{"relationshipType": "OWNER", "identifier": "urn:li:userGeneratedContent"}],
-                    }
-                },
+                "https://api.linkedin.com/rest/documents?action=initializeUpload",
+                headers=_li_versioned_headers(access_token),
+                json={"initializeUploadRequest": {"owner": owner_urn}},
             )
+            if r.status_code not in (200, 201):
+                log.error(f"LI doc init HTTP {r.status_code} ({owner_urn}): {r.text[:300]}")
+                return None
             data = r.json()
-            upload_url = data["value"]["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"]
-            asset = data["value"]["asset"]
-            r2 = await client.put(
-                upload_url,
-                headers={"Authorization": f"Bearer {access_token}"},
-                content=pdf_bytes,
-            )
+            value = data.get("value") or {}
+            upload_url = value.get("uploadUrl")
+            doc_urn = value.get("document")
+            if not upload_url or not doc_urn:
+                log.error(f"LI doc init missing fields ({owner_urn}): {data}")
+                return None
+            r2 = await client.put(upload_url, content=pdf_bytes)
             if r2.status_code in (200, 201):
-                return asset
-            log.error(f"LI PDF upload HTTP {r2.status_code}: {r2.text[:200]}")
+                return doc_urn
+            log.error(f"LI doc PUT HTTP {r2.status_code} ({owner_urn}): {r2.text[:200]}")
     except Exception as e:
-        log.error(f"LI PDF upload error ({owner_urn}): {e}")
+        log.error(f"LI doc upload error ({owner_urn}): {e}")
     return None
 
 
 async def _li_post_document(author_urn: str, access_token: str, asset: str, caption: str, title: str) -> dict:
-    """Post a ugcPost referencing an uploaded document asset (swipeable PDF carousel)."""
+    """Publish a document carousel via Versioned /rest/posts API."""
     post_body = {
         "author": author_urn,
-        "lifecycleState": "PUBLISHED",
-        "specificContent": {
-            "com.linkedin.ugc.ShareContent": {
-                "shareCommentary": {"text": caption},
-                "shareMediaCategory": "DOCUMENT",
-                "media": [{
-                    "status": "READY",
-                    "media": asset,
-                    "title": {"text": (title or "Carousel")[:100]},
-                }],
+        "commentary": caption or "",
+        "visibility": "PUBLIC",
+        "distribution": {
+            "feedDistribution": "MAIN_FEED",
+            "targetEntities": [],
+            "thirdPartyDistributionChannels": [],
+        },
+        "content": {
+            "media": {
+                "id": asset,
+                "title": (title or "Carousel")[:100],
             }
         },
-        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+        "lifecycleState": "PUBLISHED",
+        "isReshareDisabledByAuthor": False,
     }
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
-                "https://api.linkedin.com/v2/ugcPosts",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json",
-                    "X-Restli-Protocol-Version": "2.0.0",
-                },
+                "https://api.linkedin.com/rest/posts",
+                headers=_li_versioned_headers(access_token),
                 json=post_body,
             )
-            return r.json()
+            if r.status_code in (200, 201):
+                post_id = r.headers.get("x-restli-id") or r.headers.get("X-RestLi-Id") or ""
+                return {"id": post_id, "status": r.status_code}
+            return {"error": f"LI posts HTTP {r.status_code}: {r.text[:300]}"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -2273,13 +2274,35 @@ async def post_content(content: dict, brand: str) -> dict:
             pass
         results["files_sent"] = True
 
-    # If IG posting failed, alert for manual posting
-    ig_result = results.get("instagram", {})
-    if isinstance(ig_result, dict) and "error" in str(ig_result):
+    # Per-platform success/fail summary — plain text, no markdown so it can't 400
+    try:
+        lines = [f"{BRANDS[brand]['name']} post results:"]
+        any_fail = False
+        for pkey in ("instagram", "facebook"):
+            v = results.get(pkey)
+            if v is None:
+                continue
+            if isinstance(v, dict) and "error" in str(v):
+                lines.append(f"  - {pkey}: FAIL — {str(v.get('error', v))[:140]}")
+                any_fail = True
+            else:
+                lines.append(f"  - {pkey}: OK")
+        li = results.get("linkedin")
+        if isinstance(li, dict) and li:
+            for sub, v in li.items():
+                if isinstance(v, dict) and "error" in str(v):
+                    lines.append(f"  - linkedin/{sub}: FAIL — {str(v.get('error', v))[:140]}")
+                    any_fail = True
+                else:
+                    lines.append(f"  - linkedin/{sub}: OK")
+        if any_fail:
+            lines.append("Files sent above — post failed channels manually.")
         try:
-            await send_telegram(f"⚠️ *{BRANDS[brand]['name']} — IG auto-post failed*\nFiles sent above — post manually.")
-        except Exception:
-            pass
+            await _tg_send_plain("\n".join(lines))
+        except Exception as e:
+            log.error(f"per-platform alert send failed: {e}")
+    except Exception as e:
+        log.error(f"per-platform summary build failed: {e}")
 
     # Record to posting log so Alex can query what was published
     platform_count = sum(1 for k, v in results.items() if k not in ("drive_saved", "files_sent") and "error" not in str(v))
@@ -2466,6 +2489,22 @@ async def save_to_drive(brand: str, images: list[bytes], caption: str, content_t
 
 
 # ── TELEGRAM ──────────────────────────────────────────────────────────────────
+
+async def _tg_send_plain(message: str) -> dict:
+    """Send Telegram message as plain text — no Markdown parsing, so stray chars never 400."""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    last: dict = {}
+    for chunk in [message[i:i+4000] for i in range(0, len(message), 4000)]:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk})
+                last = r.json()
+                if not last.get("ok"):
+                    log.error(f"_tg_send_plain non-ok: {last}")
+        except Exception as e:
+            log.error(f"_tg_send_plain error: {e}")
+    return last
+
 
 async def send_telegram(message: str, reply_markup: dict = None) -> dict:
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -3078,6 +3117,40 @@ async def linkedin_token_monitor():
         await asyncio.sleep(86400)
 
 
+async def linkedin_health_check():
+    """Daily liveness probe — calls /rest/posts with author validation only and reports status per account."""
+    await asyncio.sleep(60)  # let the app settle
+    while True:
+        try:
+            lines = ["LinkedIn daily health check:"]
+            for acct, tok in LI_TOKENS.items():
+                at = tok.get("access_token", "")
+                pid = tok.get("person_id", "")
+                expiry = int(tok.get("expiry", 0) or 0)
+                days_left = max(0, (expiry - int(time.time())) // 86400) if expiry else 0
+                if not at or not pid:
+                    lines.append(f"  - {acct}: NOT AUTHENTICATED — visit {RAILWAY_URL}/linkedin/auth?account={acct}")
+                    continue
+                # Cheap probe: initializeUpload for an image (won't actually upload)
+                try:
+                    async with httpx.AsyncClient(timeout=15) as client:
+                        r = await client.post(
+                            "https://api.linkedin.com/rest/images?action=initializeUpload",
+                            headers=_li_versioned_headers(at),
+                            json={"initializeUploadRequest": {"owner": f"urn:li:person:{pid}"}},
+                        )
+                    if r.status_code in (200, 201):
+                        lines.append(f"  - {acct}: OK ({days_left}d token left)")
+                    else:
+                        lines.append(f"  - {acct}: FAIL HTTP {r.status_code} — {r.text[:140]}")
+                except Exception as e:
+                    lines.append(f"  - {acct}: probe error {e}")
+            await _tg_send_plain("\n".join(lines))
+        except Exception as e:
+            log.error(f"linkedin_health_check error: {e}")
+        await asyncio.sleep(86400)  # daily
+
+
 # ── STARTUP ───────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
@@ -3091,4 +3164,5 @@ async def startup():
     from mark_v2_brain import mark_v2_listener
     asyncio.create_task(mark_v2_listener())
     asyncio.create_task(linkedin_token_monitor())
+    asyncio.create_task(linkedin_health_check())
     log.info("Mark v2 — Autonomous Marketing Brain — online")
