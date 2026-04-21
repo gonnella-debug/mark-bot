@@ -264,7 +264,7 @@ BRANDS = {
         "ig_account_id": IG_FORZA,
         "fb_page_id": FB_FORZA,
         "li_page_id": LI_FORZA_PAGE,
-        "li_admin_account": "gg_forza",  # auths via the Forza LinkedIn app
+        "li_admin_account": "sue",  # Sue is admin of the Forza company page — and also the personal cross-post target
         "li_personal_accounts": ["sue"],
         "tone": (
             "premium, operator-led, direct. No startup hype, no emojis, no exclamation marks. "
