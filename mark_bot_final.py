@@ -2021,7 +2021,7 @@ def _images_to_pdf_bytes(images_bytes_list: list) -> bytes:
     return buf.getvalue()
 
 
-LI_API_VERSION = os.getenv("LI_API_VERSION", "202404")  # LinkedIn Versioned API month
+LI_API_VERSION = os.getenv("LI_API_VERSION", "202602")  # LinkedIn Versioned API YYYYMM (rolling 12mo window)
 
 
 def _li_versioned_headers(access_token: str) -> dict:
