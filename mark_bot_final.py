@@ -252,7 +252,7 @@ BRANDS = {
         "ig_account_id": IG_FORZA,
         "fb_page_id": FB_FORZA,
         "li_page_id": LI_FORZA_PAGE,
-        "li_personal_accounts": ["gg"],
+        "li_personal_accounts": ["sue"],
         "tone": (
             "premium, operator-led, direct. No startup hype, no emojis, no exclamation marks. "
             "Classical serif confidence. Talks about systems, infrastructure, operational leverage. "
@@ -1829,11 +1829,15 @@ async def publish_facebook_carousel(page_id: str, images_bytes_list: list, capti
 
 @app.get("/linkedin/auth")
 async def linkedin_auth_start(account: str = "gg"):
-    """Start LinkedIn OAuth for a specific account (gg or emma).
-    Visit /linkedin/auth?account=gg (logged in as GG) or /linkedin/auth?account=emma (logged in as Emma)."""
+    """Start LinkedIn OAuth for a specific account (gg, emma, or sue).
+    Visit while logged into LinkedIn as that person:
+      /linkedin/auth?account=gg    — admin of Nucassa + Forza company pages
+      /linkedin/auth?account=emma  — Emma's personal (cross-posts Holdings)
+      /linkedin/auth?account=sue   — Sue's personal (cross-posts Forza)
+    """
     account = account.lower().strip()
-    if account not in ("gg", "emma"):
-        return JSONResponse({"error": f"Unknown account '{account}' — use gg or emma"})
+    if account not in ("gg", "emma", "sue"):
+        return JSONResponse({"error": f"Unknown account '{account}' — use gg, emma, or sue"})
     state = str(uuid.uuid4())
     li_oauth_states[state] = {"account": account}
     auth_url = (
