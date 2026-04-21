@@ -53,13 +53,25 @@ META_APP_ID         = os.getenv("META_APP_ID", "")
 META_APP_SECRET     = os.getenv("META_APP_SECRET", "")
 META_SYSTEM_TOKEN   = os.getenv("META_SYSTEM_TOKEN")
 
-# LinkedIn — multi-account (GG = admin of Nucassa pages + personal feed; Emma = personal feed only)
-LI_CLIENT_ID        = os.getenv("LI_CLIENT_ID", "")
-LI_CLIENT_SECRET    = os.getenv("LI_CLIENT_SECRET", "")
-LI_NUCASSA_RE_PAGE  = os.getenv("LI_NUCASSA_RE_PAGE", "90919312")
-LI_HOLDINGS_PAGE    = os.getenv("LI_HOLDINGS_PAGE", "109941216")
-LI_SCOPE            = os.getenv("LI_SCOPE", "w_member_social")
-LI_TOKENS_FILE      = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "li_tokens.json")
+# LinkedIn — multi-account, multi-app (Nucassa app for gg/emma, Forza app for sue/gg_forza)
+LI_CLIENT_ID            = os.getenv("LI_CLIENT_ID", "")
+LI_CLIENT_SECRET        = os.getenv("LI_CLIENT_SECRET", "")
+LI_FORZA_CLIENT_ID      = os.getenv("LI_FORZA_CLIENT_ID", "")
+LI_FORZA_CLIENT_SECRET  = os.getenv("LI_FORZA_CLIENT_SECRET", "")
+LI_NUCASSA_RE_PAGE      = os.getenv("LI_NUCASSA_RE_PAGE", "90919312")
+LI_HOLDINGS_PAGE        = os.getenv("LI_HOLDINGS_PAGE", "109941216")
+LI_SCOPE                = os.getenv("LI_SCOPE", "w_member_social")
+LI_TOKENS_FILE          = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "li_tokens.json")
+
+# Accounts auth'd via the Forza LinkedIn Developer App (everything else uses the Nucassa app)
+LI_FORZA_ACCOUNTS = {"sue", "gg_forza"}
+
+
+def _li_app_creds(account: str) -> tuple[str, str]:
+    """Return (client_id, client_secret) for the LinkedIn app that owns this account's OAuth."""
+    if account in LI_FORZA_ACCOUNTS:
+        return LI_FORZA_CLIENT_ID, LI_FORZA_CLIENT_SECRET
+    return LI_CLIENT_ID, LI_CLIENT_SECRET
 
 def _load_li_tokens() -> dict:
     """Load per-account LinkedIn tokens from persistent volume, fall back to env vars."""
@@ -252,6 +264,7 @@ BRANDS = {
         "ig_account_id": IG_FORZA,
         "fb_page_id": FB_FORZA,
         "li_page_id": LI_FORZA_PAGE,
+        "li_admin_account": "gg_forza",  # auths via the Forza LinkedIn app
         "li_personal_accounts": ["sue"],
         "tone": (
             "premium, operator-led, direct. No startup hype, no emojis, no exclamation marks. "
@@ -1829,21 +1842,24 @@ async def publish_facebook_carousel(page_id: str, images_bytes_list: list, capti
 
 @app.get("/linkedin/auth")
 async def linkedin_auth_start(account: str = "gg"):
-    """Start LinkedIn OAuth for a specific account (gg, emma, or sue).
-    Visit while logged into LinkedIn as that person:
-      /linkedin/auth?account=gg    — admin of Nucassa + Forza company pages
-      /linkedin/auth?account=emma  — Emma's personal (cross-posts Holdings)
-      /linkedin/auth?account=sue   — Sue's personal (cross-posts Forza)
+    """Start LinkedIn OAuth for a specific account. Visit while logged in as that person.
+      /linkedin/auth?account=gg         — Nucassa app, admin of Nucassa pages
+      /linkedin/auth?account=emma       — Nucassa app, Emma's personal (cross-posts Holdings)
+      /linkedin/auth?account=sue        — Forza app, Sue's personal (cross-posts Forza)
+      /linkedin/auth?account=gg_forza   — Forza app, GG as admin of Forza company page
     """
     account = account.lower().strip()
-    if account not in ("gg", "emma", "sue"):
-        return JSONResponse({"error": f"Unknown account '{account}' — use gg, emma, or sue"})
+    if account not in ("gg", "emma", "sue", "gg_forza"):
+        return JSONResponse({"error": f"Unknown account '{account}' — use gg, emma, sue, or gg_forza"})
+    client_id, _ = _li_app_creds(account)
+    if not client_id:
+        return JSONResponse({"error": f"No LinkedIn client_id configured for {account} — set LI_FORZA_CLIENT_ID env var" if account in LI_FORZA_ACCOUNTS else "No LI_CLIENT_ID env var"})
     state = str(uuid.uuid4())
     li_oauth_states[state] = {"account": account}
     auth_url = (
         f"https://www.linkedin.com/oauth/v2/authorization"
         f"?response_type=code"
-        f"&client_id={LI_CLIENT_ID}"
+        f"&client_id={client_id}"
         f"&redirect_uri={RAILWAY_URL}/linkedin/callback"
         f"&state={state}"
         f"&scope={LI_SCOPE.replace(' ', '%20')}"
@@ -1863,6 +1879,7 @@ async def linkedin_auth_callback(code: str = None, state: str = None, error: str
         return JSONResponse({"error": "Invalid state"})
     account = state_data.get("account", "gg")
 
+    cb_client_id, cb_client_secret = _li_app_creds(account)
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             r = await client.post(
@@ -1871,8 +1888,8 @@ async def linkedin_auth_callback(code: str = None, state: str = None, error: str
                     "grant_type": "authorization_code",
                     "code": code,
                     "redirect_uri": f"{RAILWAY_URL}/linkedin/callback",
-                    "client_id": LI_CLIENT_ID,
-                    "client_secret": LI_CLIENT_SECRET,
+                    "client_id": cb_client_id,
+                    "client_secret": cb_client_secret,
                 },
             )
             tok = r.json()
@@ -1912,6 +1929,7 @@ async def linkedin_auth_callback(code: str = None, state: str = None, error: str
             "person_id": person_id,
             "expiry": int(time.time()) + expires_in,
             "name": person_name,
+            "app": "forza" if account in LI_FORZA_ACCOUNTS else "nucassa",
         }
         _save_li_tokens()
 
@@ -1992,12 +2010,12 @@ async def _li_post(author_urn: str, access_token: str, asset: str | None, captio
         return {"error": str(e)}
 
 
-async def publish_linkedin(page_id: str, image_bytes: bytes, caption: str) -> dict:
-    """Post to a LinkedIn Organization Page. Uses GG's token since he admins Nucassa pages."""
-    gg = LI_TOKENS.get("gg", {})
-    access_token = gg.get("access_token", "")
+async def publish_linkedin(page_id: str, image_bytes: bytes, caption: str, admin_account: str = "gg") -> dict:
+    """Post to a LinkedIn Organization Page using the specified admin account's token."""
+    tok = LI_TOKENS.get(admin_account, {})
+    access_token = tok.get("access_token", "")
     if not access_token:
-        return {"error": f"LinkedIn (gg) not authenticated — visit {RAILWAY_URL}/linkedin/auth?account=gg"}
+        return {"error": f"LinkedIn ({admin_account}) not authenticated — visit {RAILWAY_URL}/linkedin/auth?account={admin_account}"}
     owner = f"urn:li:organization:{page_id}"
     asset = await upload_image_to_li(image_bytes, owner, access_token)
     return await _li_post(owner, access_token, asset, caption)
@@ -2120,12 +2138,12 @@ async def publish_linkedin_personal_carousel(account: str, images_bytes_list: li
     return await _li_post_document(owner, access_token, asset, caption, title)
 
 
-async def publish_linkedin_carousel(page_id: str, images_bytes_list: list, caption: str, title: str = "") -> dict:
-    """Post a multi-slide PDF carousel to a LinkedIn organization page (uses GG's admin token)."""
-    gg = LI_TOKENS.get("gg", {})
-    access_token = gg.get("access_token", "")
+async def publish_linkedin_carousel(page_id: str, images_bytes_list: list, caption: str, title: str = "", admin_account: str = "gg") -> dict:
+    """Post a multi-slide PDF carousel to a LinkedIn organization page using the given admin token."""
+    tok = LI_TOKENS.get(admin_account, {})
+    access_token = tok.get("access_token", "")
     if not access_token:
-        return {"error": "LinkedIn (gg) not authenticated"}
+        return {"error": f"LinkedIn ({admin_account}) not authenticated"}
     owner = f"urn:li:organization:{page_id}"
     try:
         pdf_bytes = _images_to_pdf_bytes(images_bytes_list)
@@ -2232,11 +2250,12 @@ async def post_content(content: dict, brand: str) -> dict:
         li_results: dict = {}
         li_title = content.get("topic", "") or BRANDS[brand]["name"]
         use_carousel = (ct == "carousel" and len(images) >= 2)
+        admin_account = cfg.get("li_admin_account", "gg")  # Forza uses "gg_forza"; others default to "gg"
         if li_page_id:
             if use_carousel:
-                li_results["company"] = await publish_linkedin_carousel(li_page_id, images, cap_li, li_title)
+                li_results["company"] = await publish_linkedin_carousel(li_page_id, images, cap_li, li_title, admin_account=admin_account)
             else:
-                li_results["company"] = await publish_linkedin(li_page_id, images[0], cap_li)
+                li_results["company"] = await publish_linkedin(li_page_id, images[0], cap_li, admin_account=admin_account)
         for acct in cfg.get("li_personal_accounts", []) or []:
             if use_carousel:
                 li_results[f"personal_{acct}"] = await publish_linkedin_personal_carousel(acct, images, cap_li, li_title)
@@ -3084,14 +3103,15 @@ async def refresh_linkedin_token():
         if (expiry - time.time()) > 432000:  # more than 5 days left
             continue
         try:
+            rf_client_id, rf_client_secret = _li_app_creds(account)
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
                     "https://www.linkedin.com/oauth/v2/accessToken",
                     data={
                         "grant_type":    "refresh_token",
                         "refresh_token": refresh_token,
-                        "client_id":     LI_CLIENT_ID,
-                        "client_secret": LI_CLIENT_SECRET,
+                        "client_id":     rf_client_id,
+                        "client_secret": rf_client_secret,
                     },
                 )
                 resp.raise_for_status()
