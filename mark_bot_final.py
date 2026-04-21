@@ -2886,7 +2886,8 @@ async def api_status():
                 "connected": bool(LI_TOKENS.get(a, {}).get("access_token")),
                 "name": LI_TOKENS.get(a, {}).get("name", ""),
                 "person_id": LI_TOKENS.get(a, {}).get("person_id", ""),
-            } for a in ("gg", "emma")
+                "app": LI_TOKENS.get(a, {}).get("app", "?"),
+            } for a in ("gg", "emma", "sue", "gg_forza")
         },
         "pending_approvals": len(pending_approvals),
         "brands": status,
