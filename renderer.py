@@ -131,113 +131,229 @@ def _stripe_bg_html():
 
 def generate_forza_cover_slide(headline_top: str, headline_gold: str, headline_bottom: str,
                                 logo_path: str, accent_color: str = "#C5A86C") -> str:
-    """Forza cover — ink bg, gold chevron texture, Cinzel headline. No photo.
-    Forza is a global B2B brand — never uses Dubai lifestyle imagery."""
+    """Forza cover — premium blueprint visualisation of an Operating System: central core +
+    four labelled infrastructure nodes + connecting paths. The visual *is* what we sell.
+    Bold typography, gold-on-ink, no Dubai photos (Forza is a global B2B brand)."""
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
     {_base_css()}
-    body {{ background: #0a0a0a; font-family: 'Cormorant Garamond', serif; }}
+    body {{ background: #050505; font-family: 'Cormorant Garamond', serif; }}
     .slide {{
-        background: radial-gradient(ellipse at 20% 10%, #1a1610 0%, #0a0a0a 55%, #050503 100%);
+        background:
+          radial-gradient(circle at 75% 28%, rgba(197,168,108,0.20) 0%, transparent 36%),
+          radial-gradient(ellipse at 18% 88%, rgba(140,110,60,0.10) 0%, transparent 50%),
+          linear-gradient(135deg, #181410 0%, #0a0805 50%, #050402 100%);
         overflow: hidden;
     }}
-    .chevron-pattern {{
-        position: absolute; top: -10%; right: -15%; width: 90%; height: 110%;
-        background:
-          repeating-linear-gradient(-25deg, transparent 0 80px, rgba(197,168,108,0.025) 80px 82px),
-          repeating-linear-gradient(25deg, transparent 0 120px, rgba(197,168,108,0.02) 120px 121px);
-        opacity: .9;
-    }}
-    .gold-arc {{
-        position: absolute; top: -30%; right: -20%;
-        width: 95%; height: 95%;
-        background: radial-gradient(circle, rgba(197,168,108,0.14) 0%, transparent 55%);
-    }}
-    .mini-mark {{
-        position: absolute; top: 60px; left: 60px;
-        display: flex; align-items: center; gap: 12px; opacity: .9;
-    }}
-    .mini-mark svg {{ width: 44px; height: 50px; }}
-    .mini-mark .tick {{
-        color: {accent_color}; font-family: 'Cinzel', serif; font-weight: 600;
-        font-size: 20px; letter-spacing: 6px;
-    }}
-    .divider {{
-        position: absolute; top: 60px; right: 60px;
-        font-family: 'Cinzel', serif; font-size: 12px; color: #8a8378;
-        letter-spacing: 4px; text-transform: uppercase; font-weight: 500;
-    }}
-    .content {{
+    /* faint architectural blueprint grid */
+    .grid {{
         position: absolute; inset: 0;
-        display: flex; flex-direction: column; justify-content: center;
-        padding: 0 90px; z-index: 5;
+        background:
+          repeating-linear-gradient(0deg, transparent 0 59px, rgba(197,168,108,0.04) 59px 60px),
+          repeating-linear-gradient(90deg, transparent 0 59px, rgba(197,168,108,0.04) 59px 60px);
+        z-index: 0;
+    }}
+    /* corner gold L-bracket — luxury print frame */
+    .corner-tl, .corner-tr, .corner-bl, .corner-br {{
+        position: absolute; width: 38px; height: 38px; z-index: 6;
+        border-color: {accent_color};
+    }}
+    .corner-tl {{ top: 36px; left: 36px; border-top: 2px solid; border-left: 2px solid; }}
+    .corner-tr {{ top: 36px; right: 36px; border-top: 2px solid; border-right: 2px solid; }}
+    .corner-bl {{ bottom: 36px; left: 36px; border-bottom: 2px solid; border-left: 2px solid; }}
+    .corner-br {{ bottom: 36px; right: 36px; border-bottom: 2px solid; border-right: 2px solid; }}
+    /* HERO: blueprint of an operating system */
+    .hero-os {{
+        position: absolute; top: 200px; right: 60px; width: 480px; height: 540px;
+        z-index: 4; opacity: .95;
+        filter: drop-shadow(0 0 60px rgba(197,168,108,0.25));
+    }}
+    .hero-os svg {{ width: 100%; height: 100%; }}
+    .header {{
+        position: absolute; top: 70px; left: 90px; right: 90px;
+        display: flex; justify-content: space-between; align-items: center; z-index: 8;
+    }}
+    .brandmark {{ display: flex; align-items: center; gap: 16px; }}
+    .brandmark svg {{ width: 50px; height: 56px; }}
+    .brandmark .wm {{
+        font-family: 'Cinzel', serif; font-weight: 700; color: #f5ecd6;
+        letter-spacing: 9px; font-size: 19px;
+    }}
+    .tagline {{
+        font-family: 'Cinzel', serif; font-size: 12px; color: {accent_color};
+        letter-spacing: 6px; text-transform: uppercase; font-weight: 500;
+        display: flex; align-items: center; gap: 14px;
+    }}
+    .tagline::before {{
+        content: ''; width: 38px; height: 1px; background: {accent_color}; opacity: .7;
+    }}
+    /* page indicator */
+    .page-no {{
+        position: absolute; top: 175px; left: 90px; z-index: 8;
+        font-family: 'Cinzel', serif; color: {accent_color};
+        font-size: 13px; letter-spacing: 5px; font-weight: 500;
+    }}
+    .page-no .dim {{ color: #5a5347; }}
+    .content {{
+        position: absolute; left: 90px; right: 90px; bottom: 240px;
+        z-index: 8; max-width: 720px;
     }}
     .kicker {{
-        font-family: 'Cinzel', serif; font-size: 22px; font-weight: 500;
-        color: {accent_color}; letter-spacing: 8px; text-transform: uppercase;
-        margin-bottom: 28px;
+        font-family: 'Cinzel', serif; font-size: 15px; font-weight: 600;
+        color: {accent_color}; letter-spacing: 9px; text-transform: uppercase;
+        margin-bottom: 28px; display: inline-flex; align-items: center; gap: 18px;
+    }}
+    .kicker::before {{
+        content: ''; width: 26px; height: 1px; background: {accent_color};
     }}
     .headline {{
-        font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 500;
-        font-size: 78px; line-height: 1.05; color: #f7f3ea;
-        margin-bottom: 24px;
+        font-family: 'Cormorant Garamond', serif; font-weight: 600;
+        font-size: 84px; line-height: 1.02; color: #f7f3ea;
+        letter-spacing: -1.2px; margin-bottom: 24px;
+        text-shadow: 0 4px 40px rgba(0,0,0,0.6);
     }}
-    .headline .hl {{ color: {accent_color}; font-style: normal; font-weight: 600; }}
+    .headline em {{ color: {accent_color}; font-style: italic; font-weight: 500; }}
     .sub {{
-        font-family: 'Cormorant Garamond', serif; font-size: 34px; font-weight: 400;
-        color: #b5ada0; line-height: 1.35; max-width: 780px;
+        font-family: 'Cormorant Garamond', serif; font-size: 30px; font-weight: 400;
+        font-style: italic; color: #c8bfae; line-height: 1.35; max-width: 660px;
     }}
-    .gold-line {{
-        position: absolute; bottom: 170px; left: 90px;
-        width: 80px; height: 2px; background: {accent_color};
+    /* gold accent bar */
+    .accent-bar {{
+        position: absolute; left: 90px; bottom: 200px;
+        width: 110px; height: 3px;
+        background: linear-gradient(to right, {accent_color}, transparent);
+        z-index: 6;
     }}
     .footer {{
-        position: absolute; bottom: 70px; left: 90px; right: 90px;
-        display: flex; justify-content: space-between; align-items: center;
+        position: absolute; bottom: 80px; left: 90px; right: 90px;
+        display: flex; justify-content: space-between; align-items: flex-end; z-index: 7;
     }}
-    .footer .brand {{
+    .footer-l {{
         font-family: 'Cinzel', serif; font-weight: 700; color: {accent_color};
-        letter-spacing: 10px; font-size: 18px;
+        letter-spacing: 11px; font-size: 16px;
     }}
-    .footer .site {{
-        font-family: 'Cinzel', serif; font-weight: 500; color: #6e6a62;
-        letter-spacing: 4px; font-size: 12px; text-transform: uppercase;
+    .footer-r {{
+        text-align: right;
+        font-family: 'Inter', sans-serif; font-weight: 500;
+        font-size: 11px; letter-spacing: 3px; color: #8a8275;
+        text-transform: uppercase;
     }}
-    .arrow {{
-        position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
-        width: 42px; height: 42px; border: 1.5px solid rgba(197,168,108,.6);
-        border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    .footer-r .domain {{ color: #d8cfb8; font-weight: 600; letter-spacing: 4px; font-size: 12px; }}
+    .swipe {{
+        position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+        display: flex; gap: 6px; z-index: 7;
     }}
-    .arrow svg {{ width: 18px; height: 18px; stroke: {accent_color}; fill: none; stroke-width: 2; }}
+    .swipe .dot {{
+        width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.18);
+    }}
+    .swipe .dot.active {{ background: {accent_color}; width: 18px; border-radius: 4px; }}
     </style></head><body>
     <div class="slide">
-        <div class="chevron-pattern"></div>
-        <div class="gold-arc"></div>
-        <div class="mini-mark">
-          <svg viewBox="0 0 100 110" xmlns="http://www.w3.org/2000/svg">
+        <div class="grid"></div>
+        <!-- HERO BLUEPRINT: 4 infrastructures wired to a central OS core -->
+        <div class="hero-os">
+          <svg viewBox="0 0 480 540" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              <linearGradient id="fgoldcover" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="#e2c78e"/>
-                <stop offset="50%" stop-color="#c5a86c"/>
-                <stop offset="100%" stop-color="#8e7646"/>
+              <linearGradient id="goldwire" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#e8d098" stop-opacity="0.95"/>
+                <stop offset="100%" stop-color="#8a6f3e" stop-opacity="0.6"/>
+              </linearGradient>
+              <radialGradient id="coreglow" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0%" stop-color="#f0d9a3" stop-opacity="1"/>
+                <stop offset="60%" stop-color="#c5a86c" stop-opacity="0.4"/>
+                <stop offset="100%" stop-color="#c5a86c" stop-opacity="0"/>
+              </radialGradient>
+              <linearGradient id="nodefill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#1a1410"/>
+                <stop offset="100%" stop-color="#050402"/>
               </linearGradient>
             </defs>
-            <polygon points="12,8 88,8 74,30 0,30" fill="url(#fgoldcover)"/>
-            <polygon points="17,40 66,40 54,60 6,60" fill="url(#fgoldcover)"/>
-            <polygon points="22,70 48,70 30,100 0,100" fill="url(#fgoldcover)"/>
+            <!-- connection paths (dashed gold) -->
+            <g stroke="url(#goldwire)" stroke-width="1.2" fill="none" stroke-dasharray="3,4">
+              <path d="M 240 270 L 100 110"/>
+              <path d="M 240 270 L 380 110"/>
+              <path d="M 240 270 L 100 430"/>
+              <path d="M 240 270 L 380 430"/>
+            </g>
+            <!-- solid gold orbital ring -->
+            <circle cx="240" cy="270" r="120" fill="none" stroke="{accent_color}" stroke-width="0.8" stroke-opacity="0.35"/>
+            <circle cx="240" cy="270" r="170" fill="none" stroke="{accent_color}" stroke-width="0.6" stroke-opacity="0.18" stroke-dasharray="2,5"/>
+            <!-- central core glow -->
+            <circle cx="240" cy="270" r="95" fill="url(#coreglow)" opacity="0.7"/>
+            <!-- central OS hexagon (Forza chevron motif rotated to a hex) -->
+            <polygon points="240,200 305,235 305,305 240,340 175,305 175,235"
+                     fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.5"/>
+            <text x="240" y="264" text-anchor="middle" fill="{accent_color}"
+                  font-family="Cinzel, serif" font-size="11" letter-spacing="3" font-weight="600">FORZA</text>
+            <text x="240" y="285" text-anchor="middle" fill="#d8cfb8"
+                  font-family="Cinzel, serif" font-size="9" letter-spacing="2.5">OS · v1</text>
+            <!-- 4 outer nodes: REVENUE / OPERATIONS / BRAND / PEOPLE -->
+            <g font-family="Cinzel, serif" font-size="10" font-weight="600" letter-spacing="2.5" fill="{accent_color}">
+              <!-- TL: Revenue -->
+              <circle cx="100" cy="110" r="32" fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.2"/>
+              <text x="100" y="108" text-anchor="middle">REVENUE</text>
+              <text x="100" y="122" text-anchor="middle" font-size="7" fill="#8a8275" letter-spacing="2">CRM · Sales</text>
+              <!-- TR: Operations -->
+              <circle cx="380" cy="110" r="32" fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.2"/>
+              <text x="380" y="108" text-anchor="middle">OPS</text>
+              <text x="380" y="122" text-anchor="middle" font-size="7" fill="#8a8275" letter-spacing="2">Workflow</text>
+              <!-- BL: Brand -->
+              <circle cx="100" cy="430" r="32" fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.2"/>
+              <text x="100" y="428" text-anchor="middle">BRAND</text>
+              <text x="100" y="442" text-anchor="middle" font-size="7" fill="#8a8275" letter-spacing="2">Web · Content</text>
+              <!-- BR: People -->
+              <circle cx="380" cy="430" r="32" fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.2"/>
+              <text x="380" y="428" text-anchor="middle">PEOPLE</text>
+              <text x="380" y="442" text-anchor="middle" font-size="7" fill="#8a8275" letter-spacing="2">Hiring · Ops</text>
+            </g>
+            <!-- coordinate ticks (blueprint feel) -->
+            <g stroke="{accent_color}" stroke-width="0.6" stroke-opacity="0.4">
+              <line x1="240" y1="60" x2="240" y2="72"/>
+              <line x1="240" y1="468" x2="240" y2="480"/>
+              <line x1="60" y1="270" x2="72" y2="270"/>
+              <line x1="408" y1="270" x2="420" y2="270"/>
+            </g>
           </svg>
         </div>
-        <div class="divider">Systems That Scale</div>
+        <div class="corner-tl"></div>
+        <div class="corner-tr"></div>
+        <div class="corner-bl"></div>
+        <div class="corner-br"></div>
+        <div class="header">
+          <div class="brandmark">
+            <svg viewBox="0 0 100 110" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="fgoldbrand" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#e2c78e"/>
+                  <stop offset="50%" stop-color="#c5a86c"/>
+                  <stop offset="100%" stop-color="#8e7646"/>
+                </linearGradient>
+              </defs>
+              <polygon points="12,8 88,8 74,30 0,30" fill="url(#fgoldbrand)"/>
+              <polygon points="17,40 66,40 54,60 6,60" fill="url(#fgoldbrand)"/>
+              <polygon points="22,70 48,70 30,100 0,100" fill="url(#fgoldbrand)"/>
+            </svg>
+            <span class="wm">FORZA</span>
+          </div>
+          <div class="tagline">Systems That Scale</div>
+        </div>
+        <div class="page-no">01<span class="dim"> / 04</span></div>
         <div class="content">
-            <div class="kicker">{headline_top or 'Forza'}</div>
+            <div class="kicker">{headline_top or 'Revenue Infrastructure'}</div>
             <h1 class="headline">{headline_gold}</h1>
             <div class="sub">{headline_bottom}</div>
         </div>
-        <div class="gold-line"></div>
+        <div class="accent-bar"></div>
         <div class="footer">
-            <div class="brand">FORZA</div>
-            <div class="site">forza-ai.com</div>
+            <div class="footer-l">FORZA</div>
+            <div class="footer-r">
+              <div class="domain">FORZASYSTEMS.AI</div>
+              <div>Operating Systems for Service Businesses</div>
+            </div>
+        </div>
+        <div class="swipe">
+          <div class="dot active"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
         </div>
         <div class="arrow">
           <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -305,7 +421,7 @@ def generate_forza_cta_slide(cta_text: str, accent_color: str = "#C5A86C") -> st
         <div class="tagline">Systems That Scale</div>
         <div class="gold-line"></div>
         <div class="cta">{cta_text}</div>
-        <div class="site">forza-ai.com</div>
+        <div class="site">forzasystems.ai</div>
     </div></body></html>"""
 
 

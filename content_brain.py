@@ -153,7 +153,7 @@ BRAND_CONTEXT = {
             "NEVER mention real client brand names. Case studies referred to neutrally: "
             "'a Dubai brokerage', 'an institutional investment platform', 'a property marketplace'."
         ),
-        "cta": "Book a Systems Audit at forza-ai.com",
+        "cta": "Book a Systems Audit at forzasystems.ai",
     },
 }
 
