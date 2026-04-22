@@ -1603,13 +1603,39 @@ async def create_slide_pillow(content: dict, slide_index: int, brand: str) -> by
     return None
 
 
-async def render_carousel_images(content: dict, brand: str) -> list[bytes]:
-    """Render all carousel slides via Playwright using local HD backgrounds in templates/backgrounds/."""
+def _recent_visuals_for_brand(brand: str, days: int = 7) -> dict:
+    """Return the list of backgrounds + Forza cover variants used for this
+    brand in the last `days` days, so the renderer can avoid repeating them."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    bgs: list[str] = []
+    variants: list[str] = []
+    for entry in posting_log:
+        if entry.get("brand") != brand:
+            continue
+        if entry.get("timestamp", "") < cutoff:
+            continue
+        vis = entry.get("visuals_used") or {}
+        bgs.extend(vis.get("backgrounds") or [])
+        v = vis.get("forza_cover_variant")
+        if v:
+            variants.append(v)
+    return {"backgrounds": bgs, "forza_cover_variants": variants}
+
+
+async def render_carousel_images(content: dict, brand: str) -> tuple[list[bytes], dict]:
+    """Render all carousel slides. Returns (images, visuals_used). visuals_used
+    records which backgrounds + Forza cover variant were picked so the caller
+    can persist them to posting_log for next-run dedup."""
     from renderer import render_carousel
     slides = content.get("slides", [])
     if not slides:
-        return []
-    return await render_carousel(slides, brand)
+        return [], {"backgrounds": [], "forza_cover_variant": None}
+    recent = _recent_visuals_for_brand(brand, days=7)
+    return await render_carousel(
+        slides, brand,
+        exclude_backgrounds=recent["backgrounds"],
+        exclude_forza_variants=recent["forza_cover_variants"],
+    )
 
 
 async def render_static_image(content: dict, brand: str) -> bytes | None:
@@ -1618,7 +1644,12 @@ async def render_static_image(content: dict, brand: str) -> bytes | None:
     slides = content.get("slides", [])
     if not slides:
         return None
-    imgs = await render_carousel(slides[:1], brand)
+    recent = _recent_visuals_for_brand(brand, days=7)
+    imgs, _ = await render_carousel(
+        slides[:1], brand,
+        exclude_backgrounds=recent["backgrounds"],
+        exclude_forza_variants=recent["forza_cover_variants"],
+    )
     return imgs[0] if imgs else None
 
 
@@ -2191,13 +2222,17 @@ async def post_content(content: dict, brand: str) -> dict:
 
     # Use cached renders if available, otherwise render fresh
     cached = content.pop("_cached_images", None)
+    cached_visuals = content.pop("_cached_visuals_used", None)
+    visuals_used: dict = {"backgrounds": [], "forza_cover_variant": None}
     if cached:
         log.info(f"Using cached rendered images for {brand} — {ct}")
         images = cached
+        if cached_visuals:
+            visuals_used = cached_visuals
     else:
         log.info(f"Rendering images for {brand} — {ct}")
         if ct == "carousel":
-            images = await render_carousel_images(content, brand)
+            images, visuals_used = await render_carousel_images(content, brand)
         elif ct in ("static", "story"):
             img = await render_static_image(content, brand)
             images = [img] if img else []
@@ -2212,6 +2247,7 @@ async def post_content(content: dict, brand: str) -> dict:
         _last_rendered[brand] = {
             "content": {k: v for k, v in content.items() if k != "_rendered_images_b64"},
             "images": list(images),
+            "visuals_used": visuals_used,
             "timestamp": time.time(),
         }
 
@@ -2353,6 +2389,7 @@ async def post_content(content: dict, brand: str) -> dict:
         "platforms_total": total_platforms,
         "platform_results": {k: ("ok" if "error" not in str(v) else str(v)) for k, v in results.items() if k not in ("drive_saved", "files_sent")},
         "drive_saved": results.get("drive_saved", False),
+        "visuals_used": visuals_used,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     _save_posting_log()
@@ -2966,9 +3003,9 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
         if cta:
             fake_slides.append({"slide": len(fake_slides) + 1, "headline": cta, "cta_line": cta})
         content["slides"] = fake_slides
-        rendered_images = await render_carousel_images(content, brand)
+        rendered_images, _ = await render_carousel_images(content, brand)
     elif content_type == "carousel":
-        rendered_images = await render_carousel_images(content, brand)
+        rendered_images, _ = await render_carousel_images(content, brand)
     elif content_type in ("static", "story"):
         img = await render_static_image(content, brand)
         rendered_images = [img] if img else []

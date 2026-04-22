@@ -67,8 +67,11 @@ def _init_backgrounds():
     log.info(f"Loaded {len(all_bgs)} background images across {len(categories)} categories")
 
 
-def pick_background(topic: str = "", category: str = "") -> str:
-    """Pick a background image matching the topic/category."""
+def pick_background(topic: str = "", category: str = "", exclude: list[str] | None = None) -> str:
+    """Pick a background image matching the topic/category.
+    If `exclude` is provided (e.g. backgrounds used in the last 7 days for this
+    brand), those paths are filtered out. Falls back to the full pool if
+    exclusion leaves nothing to choose from."""
     _init_backgrounds()
 
     # Map topics to categories
@@ -93,6 +96,13 @@ def pick_background(topic: str = "", category: str = "") -> str:
     pool = BG_TAGS.get(cat, BG_TAGS.get("all", []))
     if not pool:
         pool = BG_TAGS.get("all", [])
+
+    if exclude:
+        filtered = [p for p in pool if p not in set(exclude)]
+        # Only use the filtered pool if it has at least one option, else fall
+        # back to the full category pool (the whole library was posted recently).
+        if filtered:
+            pool = filtered
 
     return random.choice(pool) if pool else ""
 
@@ -129,29 +139,28 @@ def _stripe_bg_html():
     return '<div class="stripe-bg"></div><div class="streak1"></div><div class="streak2"></div>'
 
 
-def generate_forza_cover_slide(headline_top: str, headline_gold: str, headline_bottom: str,
-                                logo_path: str, accent_color: str = "#C5A86C") -> str:
-    """Forza cover — premium blueprint visualisation of an Operating System: central core +
-    four labelled infrastructure nodes + connecting paths. The visual *is* what we sell.
-    Bold typography, gold-on-ink, no Dubai photos (Forza is a global B2B brand)."""
+def _forza_cover_blueprint(headline_top: str, headline_gold: str, headline_bottom: str,
+                            logo_path: str, accent_color: str = "#C5A86C") -> str:
+    """Forza cover variant: Blueprint — central hex core + 4 labelled infrastructure
+    nodes on a gridded ink background. Original Forza cover design."""
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
     {_base_css()}
-    body {{ background: #050505; font-family: 'Cormorant Garamond', serif; }}
+    body {{ background: #0d0906; font-family: 'Cormorant Garamond', serif; }}
     .slide {{
         background:
-          radial-gradient(circle at 75% 28%, rgba(197,168,108,0.20) 0%, transparent 36%),
-          radial-gradient(ellipse at 18% 88%, rgba(140,110,60,0.10) 0%, transparent 50%),
-          linear-gradient(135deg, #181410 0%, #0a0805 50%, #050402 100%);
+          radial-gradient(circle at 72% 32%, rgba(230,195,120,0.28) 0%, transparent 42%),
+          radial-gradient(ellipse at 22% 82%, rgba(180,140,70,0.18) 0%, transparent 55%),
+          linear-gradient(135deg, #2a2018 0%, #1a130c 50%, #0d0906 100%);
         overflow: hidden;
     }}
-    /* faint architectural blueprint grid */
+    /* architectural blueprint grid — brighter so it reads at feed-thumbnail size */
     .grid {{
         position: absolute; inset: 0;
         background:
-          repeating-linear-gradient(0deg, transparent 0 59px, rgba(197,168,108,0.04) 59px 60px),
-          repeating-linear-gradient(90deg, transparent 0 59px, rgba(197,168,108,0.04) 59px 60px);
+          repeating-linear-gradient(0deg, transparent 0 59px, rgba(197,168,108,0.07) 59px 60px),
+          repeating-linear-gradient(90deg, transparent 0 59px, rgba(197,168,108,0.07) 59px 60px);
         z-index: 0;
     }}
     /* corner gold L-bracket — luxury print frame */
@@ -265,20 +274,20 @@ def generate_forza_cover_slide(headline_top: str, headline_gold: str, headline_b
                 <stop offset="100%" stop-color="#c5a86c" stop-opacity="0"/>
               </radialGradient>
               <linearGradient id="nodefill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#1a1410"/>
-                <stop offset="100%" stop-color="#050402"/>
+                <stop offset="0%" stop-color="#3a2d1e"/>
+                <stop offset="100%" stop-color="#1a130c"/>
               </linearGradient>
             </defs>
             <!-- connection paths (dashed gold) -->
-            <g stroke="url(#goldwire)" stroke-width="1.2" fill="none" stroke-dasharray="3,4">
+            <g stroke="url(#goldwire)" stroke-width="1.8" fill="none" stroke-dasharray="4,5">
               <path d="M 240 270 L 100 110"/>
               <path d="M 240 270 L 380 110"/>
               <path d="M 240 270 L 100 430"/>
               <path d="M 240 270 L 380 430"/>
             </g>
             <!-- solid gold orbital ring -->
-            <circle cx="240" cy="270" r="120" fill="none" stroke="{accent_color}" stroke-width="0.8" stroke-opacity="0.35"/>
-            <circle cx="240" cy="270" r="170" fill="none" stroke="{accent_color}" stroke-width="0.6" stroke-opacity="0.18" stroke-dasharray="2,5"/>
+            <circle cx="240" cy="270" r="120" fill="none" stroke="{accent_color}" stroke-width="1.3" stroke-opacity="0.60"/>
+            <circle cx="240" cy="270" r="170" fill="none" stroke="{accent_color}" stroke-width="1.0" stroke-opacity="0.35" stroke-dasharray="3,6"/>
             <!-- central core glow -->
             <circle cx="240" cy="270" r="95" fill="url(#coreglow)" opacity="0.7"/>
             <!-- central OS hexagon (Forza chevron motif rotated to a hex) -->
@@ -291,19 +300,19 @@ def generate_forza_cover_slide(headline_top: str, headline_gold: str, headline_b
             <!-- 4 outer nodes: REVENUE / OPERATIONS / BRAND / PEOPLE -->
             <g font-family="Cinzel, serif" font-size="10" font-weight="600" letter-spacing="2.5" fill="{accent_color}">
               <!-- TL: Revenue -->
-              <circle cx="100" cy="110" r="32" fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.2"/>
+              <circle cx="100" cy="110" r="32" fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.8"/>
               <text x="100" y="108" text-anchor="middle">REVENUE</text>
               <text x="100" y="122" text-anchor="middle" font-size="7" fill="#8a8275" letter-spacing="2">CRM · Sales</text>
               <!-- TR: Operations -->
-              <circle cx="380" cy="110" r="32" fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.2"/>
+              <circle cx="380" cy="110" r="32" fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.8"/>
               <text x="380" y="108" text-anchor="middle">OPS</text>
               <text x="380" y="122" text-anchor="middle" font-size="7" fill="#8a8275" letter-spacing="2">Workflow</text>
               <!-- BL: Brand -->
-              <circle cx="100" cy="430" r="32" fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.2"/>
+              <circle cx="100" cy="430" r="32" fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.8"/>
               <text x="100" y="428" text-anchor="middle">BRAND</text>
               <text x="100" y="442" text-anchor="middle" font-size="7" fill="#8a8275" letter-spacing="2">Web · Content</text>
               <!-- BR: People -->
-              <circle cx="380" cy="430" r="32" fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.2"/>
+              <circle cx="380" cy="430" r="32" fill="url(#nodefill)" stroke="{accent_color}" stroke-width="1.8"/>
               <text x="380" y="428" text-anchor="middle">PEOPLE</text>
               <text x="380" y="442" text-anchor="middle" font-size="7" fill="#8a8275" letter-spacing="2">Hiring · Ops</text>
             </g>
@@ -359,6 +368,420 @@ def generate_forza_cover_slide(headline_top: str, headline_gold: str, headline_b
           <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </div>
     </div></body></html>"""
+
+
+# ── FORZA COVER: common scaffold helpers (shared across variants) ───────────
+# DNA preserved across variants: lifted ink gradient, gold (#C5A86C), Cinzel+
+# Cormorant typography, corner brackets, FORZA brandmark top-left, tagline
+# top-right, page number, bottom swipe dots, FORZASYSTEMS.AI footer.
+# What VARIES: hero composition, background texture, headline position.
+
+def _forza_common_head(accent_color: str) -> str:
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+    {_base_css()}
+    body {{ background: #0d0906; font-family: 'Cormorant Garamond', serif; }}
+    .corner-tl, .corner-tr, .corner-bl, .corner-br {{
+        position: absolute; width: 38px; height: 38px; z-index: 6;
+        border-color: {accent_color};
+    }}
+    .corner-tl {{ top: 36px; left: 36px; border-top: 2px solid; border-left: 2px solid; }}
+    .corner-tr {{ top: 36px; right: 36px; border-top: 2px solid; border-right: 2px solid; }}
+    .corner-bl {{ bottom: 36px; left: 36px; border-bottom: 2px solid; border-left: 2px solid; }}
+    .corner-br {{ bottom: 36px; right: 36px; border-bottom: 2px solid; border-right: 2px solid; }}
+    .header {{
+        position: absolute; top: 70px; left: 90px; right: 90px;
+        display: flex; justify-content: space-between; align-items: center; z-index: 8;
+    }}
+    .brandmark {{ display: flex; align-items: center; gap: 16px; }}
+    .brandmark svg {{ width: 50px; height: 56px; }}
+    .brandmark .wm {{
+        font-family: 'Cinzel', serif; font-weight: 700; color: #f5ecd6;
+        letter-spacing: 9px; font-size: 19px;
+    }}
+    .tagline {{
+        font-family: 'Cinzel', serif; font-size: 12px; color: {accent_color};
+        letter-spacing: 6px; text-transform: uppercase; font-weight: 500;
+        display: flex; align-items: center; gap: 14px;
+    }}
+    .tagline::before {{ content: ''; width: 38px; height: 1px; background: {accent_color}; opacity: .7; }}
+    .page-no {{
+        position: absolute; top: 175px; left: 90px; z-index: 8;
+        font-family: 'Cinzel', serif; color: {accent_color};
+        font-size: 13px; letter-spacing: 5px; font-weight: 500;
+    }}
+    .page-no .dim {{ color: #5a5347; }}
+    .footer {{
+        position: absolute; bottom: 80px; left: 90px; right: 90px;
+        display: flex; justify-content: space-between; align-items: flex-end; z-index: 7;
+    }}
+    .footer-l {{
+        font-family: 'Cinzel', serif; font-weight: 700; color: {accent_color};
+        letter-spacing: 11px; font-size: 16px;
+    }}
+    .footer-r {{
+        text-align: right;
+        font-family: 'Inter', sans-serif; font-weight: 500;
+        font-size: 11px; letter-spacing: 3px; color: #8a8275;
+        text-transform: uppercase;
+    }}
+    .footer-r .domain {{ color: #d8cfb8; font-weight: 600; letter-spacing: 4px; font-size: 12px; }}
+    .swipe {{
+        position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+        display: flex; gap: 6px; z-index: 7;
+    }}
+    .swipe .dot {{ width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.18); }}
+    .swipe .dot.active {{ background: {accent_color}; width: 18px; border-radius: 4px; }}
+    .headline {{
+        font-family: 'Cormorant Garamond', serif; font-weight: 600;
+        line-height: 1.02; color: #f7f3ea;
+        letter-spacing: -1.2px;
+        text-shadow: 0 4px 40px rgba(0,0,0,0.6);
+    }}
+    .headline em {{ color: {accent_color}; font-style: italic; font-weight: 500; }}
+    .kicker {{
+        font-family: 'Cinzel', serif; font-size: 15px; font-weight: 600;
+        color: {accent_color}; letter-spacing: 9px; text-transform: uppercase;
+        display: inline-flex; align-items: center; gap: 18px;
+    }}
+    .kicker::before {{ content: ''; width: 26px; height: 1px; background: {accent_color}; }}
+    .sub {{
+        font-family: 'Cormorant Garamond', serif; font-weight: 400;
+        font-style: italic; color: #c8bfae; line-height: 1.35;
+    }}"""
+
+
+def _forza_common_chrome(accent_color: str, page_no: str = "01", total: str = "04", dots_active: int = 0, dots_total: int = 4) -> str:
+    """Top-of-slide chrome: corners + brandmark + tagline + page number + bottom swipe dots + footer."""
+    dots = "".join(f'<div class="dot{" active" if i == dots_active else ""}"></div>' for i in range(dots_total))
+    return f"""
+        <div class="corner-tl"></div><div class="corner-tr"></div>
+        <div class="corner-bl"></div><div class="corner-br"></div>
+        <div class="header">
+          <div class="brandmark">
+            <svg viewBox="0 0 100 110" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="fgoldbrand" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#e2c78e"/>
+                  <stop offset="50%" stop-color="#c5a86c"/>
+                  <stop offset="100%" stop-color="#8e7646"/>
+                </linearGradient>
+              </defs>
+              <polygon points="12,8 88,8 74,30 0,30" fill="url(#fgoldbrand)"/>
+              <polygon points="17,40 66,40 54,60 6,60" fill="url(#fgoldbrand)"/>
+              <polygon points="22,70 48,70 30,100 0,100" fill="url(#fgoldbrand)"/>
+            </svg>
+            <span class="wm">FORZA</span>
+          </div>
+          <div class="tagline">Systems That Scale</div>
+        </div>
+        <div class="page-no">{page_no}<span class="dim"> / {total}</span></div>
+        <div class="footer">
+            <div class="footer-l">FORZA</div>
+            <div class="footer-r">
+              <div class="domain">FORZASYSTEMS.AI</div>
+              <div>Operating Systems for Service Businesses</div>
+            </div>
+        </div>
+        <div class="swipe">{dots}</div>"""
+
+
+def _forza_cover_monolith(headline_top: str, headline_gold: str, headline_bottom: str,
+                           logo_path: str, accent_color: str = "#C5A86C") -> str:
+    """Variant: Monolith — a single towering gold chevron stack on the right half,
+    strong directional light, headline anchored bottom-left. Vertical architecture,
+    minimal composition. Reads at thumbnail because the chevron is a single bold silhouette."""
+    return f"""{_forza_common_head(accent_color)}
+    .slide {{
+        background:
+          radial-gradient(ellipse at 78% 50%, rgba(230,195,120,0.32) 0%, transparent 55%),
+          radial-gradient(ellipse at 15% 15%, rgba(197,168,108,0.12) 0%, transparent 45%),
+          linear-gradient(105deg, #1a130c 0%, #231a12 40%, #110c08 100%);
+        overflow: hidden;
+    }}
+    .stripes {{
+        position: absolute; inset: 0; z-index: 0; opacity: 0.6;
+        background: repeating-linear-gradient(90deg, transparent 0 96px, rgba(197,168,108,0.05) 96px 97px);
+    }}
+    .monolith {{
+        position: absolute; top: 90px; right: 0; bottom: 90px; width: 520px;
+        z-index: 3;
+        filter: drop-shadow(-30px 0 80px rgba(230,195,120,0.25));
+    }}
+    .monolith svg {{ width: 100%; height: 100%; }}
+    .content {{
+        position: absolute; left: 90px; right: 560px; bottom: 220px;
+        z-index: 8; max-width: 560px;
+    }}
+    .kicker {{ margin-bottom: 30px; }}
+    .headline {{ font-size: 76px; margin-bottom: 26px; }}
+    .sub {{ font-size: 28px; max-width: 500px; }}
+    .accent-bar {{
+        position: absolute; left: 90px; bottom: 180px;
+        width: 140px; height: 3px;
+        background: linear-gradient(to right, {accent_color}, transparent);
+        z-index: 6;
+    }}
+    </style></head><body>
+    <div class="slide">
+        <div class="stripes"></div>
+        <div class="monolith">
+          <svg viewBox="0 0 520 900" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+            <defs>
+              <linearGradient id="monoGold" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#f0d9a3" stop-opacity="1"/>
+                <stop offset="55%" stop-color="#c5a86c" stop-opacity="0.95"/>
+                <stop offset="100%" stop-color="#6b5432" stop-opacity="0.75"/>
+              </linearGradient>
+              <linearGradient id="monoShadow" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="rgba(10,7,4,0.8)"/>
+                <stop offset="100%" stop-color="rgba(10,7,4,0)"/>
+              </linearGradient>
+            </defs>
+            <!-- Ground shadow strip -->
+            <rect x="0" y="830" width="520" height="2" fill="{accent_color}" opacity="0.5"/>
+            <!-- Stacked chevron tower: 6 descending chevrons, largest at bottom -->
+            <g fill="url(#monoGold)">
+              <polygon points="60,90 420,90 380,170 20,170"/>
+              <polygon points="90,200 410,200 372,280 52,280"/>
+              <polygon points="120,310 400,310 364,390 84,390"/>
+              <polygon points="150,420 390,420 356,500 116,500"/>
+              <polygon points="180,530 380,530 348,610 148,610"/>
+              <polygon points="210,640 370,640 340,720 180,720"/>
+            </g>
+            <!-- Front-lit edge highlights -->
+            <g stroke="#f5e7c2" stroke-width="1.5" stroke-opacity="0.45" fill="none">
+              <path d="M 60 90 L 420 90"/>
+              <path d="M 90 200 L 410 200"/>
+              <path d="M 120 310 L 400 310"/>
+              <path d="M 150 420 L 390 420"/>
+              <path d="M 180 530 L 380 530"/>
+              <path d="M 210 640 L 370 640"/>
+            </g>
+            <!-- Shadow wash on left of tower -->
+            <rect x="0" y="0" width="220" height="900" fill="url(#monoShadow)"/>
+            <!-- Altitude ticks on left -->
+            <g stroke="{accent_color}" stroke-width="1" stroke-opacity="0.55">
+              <line x1="20" y1="130" x2="50" y2="130"/>
+              <line x1="20" y1="240" x2="50" y2="240"/>
+              <line x1="20" y1="350" x2="50" y2="350"/>
+              <line x1="20" y1="460" x2="50" y2="460"/>
+              <line x1="20" y1="570" x2="50" y2="570"/>
+              <line x1="20" y1="680" x2="50" y2="680"/>
+            </g>
+            <!-- Floor label strip -->
+            <g font-family="Cinzel, serif" font-size="9" letter-spacing="3" fill="#d8cfb8" font-weight="600">
+              <text x="20" y="137">L6 · REVENUE</text>
+              <text x="20" y="247">L5 · OPERATIONS</text>
+              <text x="20" y="357">L4 · BRAND</text>
+              <text x="20" y="467">L3 · PEOPLE</text>
+              <text x="20" y="577">L2 · DATA</text>
+              <text x="20" y="687">L1 · FOUNDATION</text>
+            </g>
+          </svg>
+        </div>
+        <div class="content">
+            <div class="kicker">{headline_top or 'Revenue Infrastructure'}</div>
+            <h1 class="headline">{headline_gold}</h1>
+            <div class="sub">{headline_bottom}</div>
+        </div>
+        <div class="accent-bar"></div>
+        {_forza_common_chrome(accent_color)}
+    </div></body></html>"""
+
+
+def _forza_cover_flow(headline_top: str, headline_gold: str, headline_bottom: str,
+                      logo_path: str, accent_color: str = "#C5A86C") -> str:
+    """Variant: Flow — horizontal INPUT → ENGINE → OUTPUT process diagram with
+    gold pipes. Headline at top, diagram fills bottom half. Different reading
+    direction from the other variants, works at thumbnail because the three
+    anchored boxes + arrows are legible."""
+    return f"""{_forza_common_head(accent_color)}
+    .slide {{
+        background:
+          radial-gradient(ellipse at 50% 35%, rgba(230,195,120,0.22) 0%, transparent 55%),
+          linear-gradient(180deg, #26200e 0%, #15100a 55%, #0a0805 100%);
+        overflow: hidden;
+    }}
+    .dots {{
+        position: absolute; inset: 0; z-index: 0;
+        background-image: radial-gradient(circle, rgba(197,168,108,0.12) 1.5px, transparent 1.8px);
+        background-size: 34px 34px; opacity: 0.8;
+    }}
+    .content {{
+        position: absolute; left: 90px; right: 90px; top: 270px;
+        z-index: 8;
+    }}
+    .kicker {{ margin-bottom: 26px; }}
+    .headline {{ font-size: 72px; margin-bottom: 20px; max-width: 880px; }}
+    .sub {{ font-size: 26px; max-width: 760px; }}
+    .flow {{
+        position: absolute; left: 0; right: 0; bottom: 170px;
+        display: flex; justify-content: center; align-items: center;
+        gap: 0; z-index: 5;
+    }}
+    .node {{
+        width: 220px; height: 180px;
+        background: linear-gradient(160deg, #2d2216 0%, #1a130b 100%);
+        border: 1.5px solid {accent_color};
+        border-radius: 4px;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        box-shadow: 0 8px 40px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(230,195,120,0.15);
+        position: relative;
+    }}
+    .node .idx {{
+        position: absolute; top: 12px; left: 16px;
+        font-family: 'Cinzel', serif; font-size: 11px; font-weight: 700;
+        color: {accent_color}; letter-spacing: 3px;
+    }}
+    .node .label {{
+        font-family: 'Cinzel', serif; font-size: 18px; font-weight: 700;
+        color: #f5ecd6; letter-spacing: 6px; margin-bottom: 10px;
+    }}
+    .node .desc {{
+        font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 500;
+        color: #c8bfae; letter-spacing: 2px; text-transform: uppercase;
+        text-align: center;
+    }}
+    .pipe {{
+        width: 96px; height: 2px;
+        background: linear-gradient(to right, {accent_color}, {accent_color});
+        position: relative;
+        opacity: 0.85;
+    }}
+    .pipe::before {{
+        content: ''; position: absolute; right: -2px; top: -7px;
+        width: 0; height: 0; border: 8px solid transparent; border-left-color: {accent_color};
+    }}
+    .pipe::after {{
+        content: ''; position: absolute; left: 20%; top: -12px; width: 8px; height: 8px;
+        border-radius: 50%; background: {accent_color};
+        box-shadow: 0 0 12px {accent_color};
+    }}
+    </style></head><body>
+    <div class="slide">
+        <div class="dots"></div>
+        <div class="content">
+            <div class="kicker">{headline_top or 'The Forza Operating System'}</div>
+            <h1 class="headline">{headline_gold}</h1>
+            <div class="sub">{headline_bottom}</div>
+        </div>
+        <div class="flow">
+            <div class="node">
+              <span class="idx">01</span>
+              <div class="label">INPUT</div>
+              <div class="desc">Leads · Calls · DMs<br>Forms · Inbox</div>
+            </div>
+            <div class="pipe"></div>
+            <div class="node">
+              <span class="idx">02</span>
+              <div class="label">ENGINE</div>
+              <div class="desc">Qualify · Route<br>Follow-up · Learn</div>
+            </div>
+            <div class="pipe"></div>
+            <div class="node">
+              <span class="idx">03</span>
+              <div class="label">OUTPUT</div>
+              <div class="desc">Booked Revenue<br>Clean Pipeline</div>
+            </div>
+        </div>
+        {_forza_common_chrome(accent_color)}
+    </div></body></html>"""
+
+
+def _forza_cover_topology(headline_top: str, headline_gold: str, headline_bottom: str,
+                           logo_path: str, accent_color: str = "#C5A86C") -> str:
+    """Variant: Topology — concentric topographic contour rings radiating from the
+    upper-right corner, like an elevation map. No hero SVG module; the background
+    IS the visual. Headline gets centre-stage."""
+    # Generate 18 contour curves as concentric elliptical arcs from the upper-right focal point.
+    contours = ""
+    for i, r in enumerate(range(140, 1620, 82)):
+        opacity = max(0.08, 0.55 - (i * 0.025))
+        stroke_width = 1.8 if i % 4 == 0 else 1.0
+        contours += f'<circle cx="1080" cy="0" r="{r}" fill="none" stroke="{accent_color}" stroke-opacity="{opacity:.3f}" stroke-width="{stroke_width}"/>'
+    return f"""{_forza_common_head(accent_color)}
+    .slide {{
+        background:
+          radial-gradient(ellipse at 90% 0%, rgba(230,195,120,0.35) 0%, transparent 50%),
+          radial-gradient(ellipse at 30% 100%, rgba(140,110,60,0.18) 0%, transparent 55%),
+          linear-gradient(160deg, #261d14 0%, #15100a 55%, #0a0805 100%);
+        overflow: hidden;
+    }}
+    .topo {{
+        position: absolute; inset: 0; z-index: 1; opacity: 0.85;
+    }}
+    .topo svg {{ width: 100%; height: 100%; }}
+    .content {{
+        position: absolute; left: 90px; right: 420px; top: 300px;
+        z-index: 8;
+    }}
+    .kicker {{ margin-bottom: 30px; }}
+    .headline {{ font-size: 94px; margin-bottom: 28px; }}
+    .sub {{ font-size: 30px; max-width: 620px; }}
+    .accent-bar {{
+        position: absolute; left: 90px; bottom: 200px;
+        width: 110px; height: 3px;
+        background: linear-gradient(to right, {accent_color}, transparent);
+        z-index: 6;
+    }}
+    .summit {{
+        position: absolute; top: 70px; right: 70px;
+        z-index: 4;
+        font-family: 'Cinzel', serif; color: {accent_color};
+        font-size: 10px; letter-spacing: 4px; font-weight: 600;
+        text-align: right; opacity: 0.7;
+    }}
+    .summit .big {{
+        font-size: 14px; color: #f5ecd6; letter-spacing: 6px;
+        margin-top: 4px;
+    }}
+    </style></head><body>
+    <div class="slide">
+        <div class="topo">
+          <svg viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+            {contours}
+          </svg>
+        </div>
+        <div class="content">
+            <div class="kicker">{headline_top or 'Navigate Complexity'}</div>
+            <h1 class="headline">{headline_gold}</h1>
+            <div class="sub">{headline_bottom}</div>
+        </div>
+        <div class="accent-bar"></div>
+        {_forza_common_chrome(accent_color)}
+    </div></body></html>"""
+
+
+# ── FORZA COVER: dispatcher + variant picker ─────────────────────────────────
+FORZA_COVER_VARIANTS = {
+    "blueprint": _forza_cover_blueprint,
+    "monolith": _forza_cover_monolith,
+    "flow": _forza_cover_flow,
+    "topology": _forza_cover_topology,
+}
+
+
+def pick_forza_cover_variant(exclude: list[str] | None = None) -> str:
+    """Pick a Forza cover variant, excluding any in `exclude` (typically the
+    variants used in the last 7 days for Forza). Falls back to the full set if
+    exclusion leaves nothing to choose from (e.g. every variant used this week)."""
+    pool = [name for name in FORZA_COVER_VARIANTS if name not in set(exclude or [])]
+    if not pool:
+        pool = list(FORZA_COVER_VARIANTS.keys())
+    return random.choice(pool)
+
+
+def generate_forza_cover_slide(headline_top: str, headline_gold: str, headline_bottom: str,
+                                logo_path: str, accent_color: str = "#C5A86C",
+                                variant: str | None = None) -> tuple[str, str]:
+    """Dispatch to one of the Forza cover variants. Returns (html, variant_name)
+    so callers can record which variant was used for 7-day dedup."""
+    if not variant or variant not in FORZA_COVER_VARIANTS:
+        variant = pick_forza_cover_variant()
+    fn = FORZA_COVER_VARIANTS[variant]
+    return fn(headline_top, headline_gold, headline_bottom, logo_path, accent_color), variant
 
 
 def generate_forza_cta_slide(cta_text: str, accent_color: str = "#C5A86C") -> str:
@@ -697,7 +1120,9 @@ async def render_html_to_png(html_content: str, output_path: str) -> bool:
         return False
 
 
-async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]:
+async def render_carousel(slides_content: list[dict], brand: str,
+                           exclude_backgrounds: list[str] | None = None,
+                           exclude_forza_variants: list[str] | None = None) -> tuple[list[bytes], dict]:
     """
     Render a full carousel from structured content.
 
@@ -726,6 +1151,8 @@ async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]
     accent = brand_cfg["accent"]
 
     images = []
+    # Track visuals picked so the caller can log them for 7-day dedup.
+    visuals_used: dict = {"backgrounds": [], "forza_cover_variant": None}
 
     import tempfile
 
@@ -769,13 +1196,20 @@ async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]
 
             if slide_type == "cover":
                 if is_forza:
-                    # Forza cover is typography + gold chevron pattern, never a Dubai photo.
-                    html = generate_forza_cover_slide(
+                    # Forza cover: pick one of the 4 template variants, avoiding
+                    # any used in the last 7 days (passed in via exclude_forza_variants).
+                    variant = pick_forza_cover_variant(exclude_forza_variants)
+                    html, picked_variant = generate_forza_cover_slide(
                         slide["headline_top"], slide["headline_gold"], slide.get("headline_bottom", ""),
-                        logo_path, accent
+                        logo_path, accent, variant=variant,
                     )
+                    visuals_used["forza_cover_variant"] = picked_variant
                 else:
-                    bg = slide.get("bg_image") or pick_background(slide.get("headline_gold", ""))
+                    bg = slide.get("bg_image") or pick_background(
+                        slide.get("headline_gold", ""), exclude=exclude_backgrounds,
+                    )
+                    if bg:
+                        visuals_used["backgrounds"].append(bg)
                     html = generate_cover_slide(
                         slide["headline_top"], slide["headline_gold"], slide.get("headline_bottom", ""),
                         bg, logo_path, accent
@@ -799,7 +1233,14 @@ async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]
                         logo_path, accent
                     )
                 else:
-                    bg = slide.get("bg_image") or pick_background(slide.get("headline_gold", ""))
+                    # Dedup against backgrounds already picked for this post AND
+                    # those used in the last 7 days (passed via exclude_backgrounds).
+                    already = set(exclude_backgrounds or []) | set(visuals_used["backgrounds"])
+                    bg = slide.get("bg_image") or pick_background(
+                        slide.get("headline_gold", ""), exclude=list(already),
+                    )
+                    if bg:
+                        visuals_used["backgrounds"].append(bg)
                     html = generate_photo_data_slide(
                         slide["headline_gold"], slide["headline_white"], slide["bullets"],
                         bg, logo_path, accent
@@ -831,4 +1272,4 @@ async def render_carousel(slides_content: list[dict], brand: str) -> list[bytes]
 
         await browser.close()
 
-    return images
+    return images, visuals_used
