@@ -42,13 +42,30 @@ _suggestion_sent_today = None  # date string
 
 # ── TELEGRAM HELPERS ──
 
+# Persistent bottom-of-chat menu — always visible so GG never has to type
+# or scroll for the common actions.
+PERSISTENT_KEYBOARD = {
+    "keyboard": [
+        [{"text": "💡 Suggestions"}, {"text": "📊 Status"}],
+        [{"text": "❓ Help"}],
+    ],
+    "resize_keyboard": True,
+    "is_persistent": True,
+    "input_field_placeholder": "Tap a button or type…",
+}
+
+
 async def send_tg(text: str, reply_markup: dict = None) -> dict:
+    """Send a Telegram message. If reply_markup is None, attach the persistent
+    keyboard so the menu stays visible. Inline keyboards override (they need
+    to attach to the specific message)."""
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    effective_markup = reply_markup if reply_markup is not None else PERSISTENT_KEYBOARD
     last = {}
     for i, chunk in enumerate([text[i:i+4000] for i in range(0, len(text), 4000)]):
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "parse_mode": "Markdown"}
-        if reply_markup and i == 0:
-            payload["reply_markup"] = json.dumps(reply_markup)
+        if effective_markup and i == 0:
+            payload["reply_markup"] = json.dumps(effective_markup)
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 r = await client.post(url, json=payload)
@@ -436,9 +453,14 @@ async def mark_v2_listener():
                     continue
 
                 text_lower = text.lower()
+                # Strip emoji prefix from persistent keyboard buttons
+                text_clean = text_lower
+                for emoji in ("💡 ", "📊 ", "❓ "):
+                    text_clean = text_clean.replace(emoji, "")
+                text_clean = text_clean.strip()
 
-                # Suggest
-                if any(text_lower.startswith(w) for w in ["suggest", "morning", "ideas", "topics"]):
+                # Suggest — also matches "💡 Suggestions" button
+                if text_clean.startswith("suggest") or any(text_lower.startswith(w) for w in ["suggest", "morning", "ideas", "topics", "💡"]):
                     await send_morning_suggestions()
 
                 # Generate specific
@@ -459,8 +481,8 @@ async def mark_v2_listener():
                         brand = "nucassa_re"
                     await generate_and_render(brand, topic or None, "carousel")
 
-                # Status
-                elif any(w in text_lower for w in ["status", "what posted", "today"]):
+                # Status — also matches "📊 Status" button
+                elif text_clean == "status" or any(w in text_lower for w in ["status", "what posted", "today", "📊"]):
                     if not _posted_today:
                         await send_tg("No posts today. Say 'suggest' for content ideas.")
                     else:
@@ -471,14 +493,15 @@ async def mark_v2_listener():
                                 lines.append(f"  • {t}")
                         await send_tg("\n".join(lines))
 
-                # Help
-                elif any(w in text_lower for w in ["help", "commands"]):
+                # Help — also matches "❓ Help" button
+                elif text_clean == "help" or any(w in text_lower for w in ["help", "commands", "❓"]):
                     await send_tg(
                         "*Mark v2 — Commands:*\n\n"
+                        "Tap a button below or type:\n"
                         "• `suggest` — get today's topic suggestions\n"
-                        "• `generate holdings [topic]` — create content\n"
+                        "• `generate holdings [topic]` — create content for a brand\n"
                         "• `status` — what's been posted today\n\n"
-                        "_I also suggest topics automatically at 10am Dubai_"
+                        "_I also auto-suggest topics at 10am Dubai_"
                     )
 
                 # Chat
