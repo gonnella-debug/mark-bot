@@ -407,12 +407,10 @@ async def mark_v2_listener():
     offset = None
     log.info("Mark v2 listener active — GG talks to Mark directly")
 
-    # Startup message with buttons
-    markup = {"inline_keyboard": [
-        [{"text": "💡 Get Today's Suggestions", "callback_data": "v2_suggest"}],
-        [{"text": "📊 Status", "callback_data": "v2_status"}],
-    ]}
-    await send_tg("*Mark v2 online*", reply_markup=markup)
+    # Startup — no inline keyboard so the PERSISTENT_KEYBOARD
+    # (Suggestions / Status / Help) attaches at the bottom of the chat
+    # and stays there. Suppresses the duplicate per-message inline buttons.
+    await send_tg("*Mark v2 online* — tap a button below.")
 
     # Start background tasks
     asyncio.create_task(daily_morning_scheduler())
