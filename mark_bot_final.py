@@ -28,6 +28,18 @@ sentry_sdk.init(
     send_default_pii=False,
 )
 
+# BetterStack log shipping — active when BETTERSTACK_SOURCE_TOKEN is set.
+if os.getenv("BETTERSTACK_SOURCE_TOKEN"):
+    try:
+        import logging as _logging
+        from logtail import LogtailHandler
+        _logging.getLogger().addHandler(LogtailHandler(
+            source_token=os.environ["BETTERSTACK_SOURCE_TOKEN"],
+            host="https://" + os.environ.get("BETTERSTACK_HOST", "s2392783.eu-fsn-3.betterstackdata.com"),
+        ))
+    except Exception:
+        pass  # observability must never crash the bot
+
 import json
 import logging
 import asyncio
@@ -2840,6 +2852,11 @@ async def health():
         "pending_approvals": len(pending_approvals),
         "pending_batches": {k: len(v) for k, v in pending_batches.items()},
     }
+
+
+@app.get("/health")
+async def health_probe():
+    return {"status": "ok", "service": "mark", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @app.post("/generate")
