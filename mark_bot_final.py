@@ -54,8 +54,17 @@ from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, RedirectResponse
 from dotenv import load_dotenv
+from anthropic_limiter import anthropic_post, AnthropicBudgetExceeded  # noqa: E402
 
 load_dotenv()
+
+# Startup validation — Mark refuses to run if required env vars are missing
+# or contain placeholder values.
+from schemas import REQUIRED_ENV_VARS, AIRTABLE_SCHEMAS, EXTERNAL_APIS
+from validator import validate_environment
+_failures = validate_environment(REQUIRED_ENV_VARS, AIRTABLE_SCHEMAS, EXTERNAL_APIS)
+if _failures:
+    raise RuntimeError("🚨 STARTUP VALIDATION FAILED: " + "; ".join(_failures))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -463,8 +472,7 @@ async def call_claude(prompt: str, pdf_b64: str = None, max_retries: int = 3) ->
     for attempt in range(max_retries):
         try:
             async with httpx.AsyncClient(timeout=60) as client:
-                r = await client.post(
-                    "https://api.anthropic.com/v1/messages",
+                r = await anthropic_post(client,
                     headers={
                         "x-api-key": CLAUDE_API_KEY,
                         "anthropic-version": "2023-06-01",
@@ -577,8 +585,7 @@ async def generate_single(brand: str, content_type: str, topic: str = "", pdf_b6
         for attempt in range(3):
             try:
                 async with httpx.AsyncClient(timeout=60) as client:
-                    r = await client.post(
-                        "https://api.anthropic.com/v1/messages",
+                    r = await anthropic_post(client,
                         headers={
                             "x-api-key": CLAUDE_API_KEY,
                             "anthropic-version": "2023-06-01",

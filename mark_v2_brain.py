@@ -24,6 +24,7 @@ import base64
 from datetime import datetime, timezone, timedelta
 
 import httpx
+from anthropic_limiter import anthropic_post, AnthropicBudgetExceeded  # noqa: E402
 
 log = logging.getLogger(__name__)
 
@@ -550,8 +551,7 @@ Keep responses SHORT — 2-3 sentences max. Talk like a human colleague."""
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
+            resp = await anthropic_post(client,
                 headers={
                     "x-api-key": CLAUDE_API_KEY,
                     "anthropic-version": "2023-06-01",
