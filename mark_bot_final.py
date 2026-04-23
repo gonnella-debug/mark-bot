@@ -19,6 +19,16 @@ Architecture:
 from __future__ import annotations
 
 import os
+
+# Sentry — initialized only if SENTRY_DSN is provisioned. No-op otherwise.
+if os.getenv("SENTRY_DSN"):
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=os.environ["SENTRY_DSN"],
+        environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
+        traces_sample_rate=0.0,
+    )
+
 import json
 import logging
 import asyncio
