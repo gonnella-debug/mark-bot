@@ -3134,19 +3134,32 @@ async def admin_test_channels(request: Request):
         cid = await upload_image_to_ig(ig_id, images[0], "", is_carousel_item=True)
         out["ig_container"] = cid or f"FAIL: {_last_ig_upload_error or 'no detail'}"
 
-    # LinkedIn doc upload (doesn't publish). Org owner.
+    # LinkedIn doc upload (doesn't publish). Try org owner first; on failure
+    # retry with the admin person URN (production fallback path used by
+    # publish_linkedin_carousel).
     if "linkedin" in cfg["platforms"] and cfg.get("li_page_id") and images:
         admin_account = cfg.get("li_admin_account", "gg")
         tok = LI_TOKENS.get(admin_account, {})
         at = tok.get("access_token", "")
+        pid = tok.get("person_id", "")
         if not at:
             out["li_org_doc"] = f"FAIL: {admin_account} not authenticated"
         else:
             try:
                 pdf = _images_to_pdf_bytes(images)
-                owner = f"urn:li:organization:{cfg['li_page_id']}"
-                asset = await _upload_pdf_to_li(pdf, owner, at)
-                out["li_org_doc"] = asset or f"FAIL: {_last_li_upload_error or 'no detail'}"
+                org_owner = f"urn:li:organization:{cfg['li_page_id']}"
+                asset = await _upload_pdf_to_li(pdf, org_owner, at)
+                if asset:
+                    out["li_org_doc"] = asset
+                elif pid:
+                    # Fallback path: upload as admin person, post would author as org.
+                    asset2 = await _upload_pdf_to_li(pdf, f"urn:li:person:{pid}", at)
+                    out["li_org_doc"] = (
+                        f"OK via person-owner fallback: {asset2}"
+                        if asset2 else f"FAIL: {_last_li_upload_error or 'no detail'}"
+                    )
+                else:
+                    out["li_org_doc"] = f"FAIL: {_last_li_upload_error or 'no detail'}"
             except Exception as e:
                 out["li_org_doc"] = f"FAIL: PDF build {type(e).__name__}: {e}"
 
