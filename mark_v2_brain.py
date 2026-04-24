@@ -411,7 +411,11 @@ async def mark_v2_listener():
     # Startup — no inline keyboard so the PERSISTENT_KEYBOARD
     # (Suggestions / Status / Help) attaches at the bottom of the chat
     # and stays there. Suppresses the duplicate per-message inline buttons.
-    await send_tg("*Mark v2 online* — tap a button below.")
+    from mark_bot_final import should_send_boot_message
+    if should_send_boot_message("mark_v2", gap_seconds=600):
+        await send_tg("*Mark v2 online* — tap a button below.")
+    else:
+        log.info("mark_v2 boot within 10 min of previous boot — skipping startup Telegram")
 
     # Start background tasks
     asyncio.create_task(daily_morning_scheduler())

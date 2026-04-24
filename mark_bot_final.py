@@ -3131,6 +3131,36 @@ async def _run_pdf_post(brand: str, content_type: str, pdf_name: str):
         await send_telegram("⚠️ PDF content generation failed.")
 
 
+# ── BOOT-DEDUP ───────────────────────────────────────────────────────────────
+# Suppresses the "Mark v2 online" / "LinkedIn daily health check" Telegram
+# sends when Railway restarts the container within a 10 min window. The
+# state lives on the Railway volume so it survives redeploys.
+
+_BOOT_DIR = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data")
+
+
+def should_send_boot_message(bot_slug: str, gap_seconds: int = 600) -> bool:
+    """True when last recorded boot was >gap_seconds ago (cold boot).
+    Always writes the current boot timestamp before returning."""
+    boot_file = os.path.join(_BOOT_DIR, f"{bot_slug}_last_boot.json")
+    now_ts = int(time.time())
+    last_ts = 0
+    try:
+        with open(boot_file) as f:
+            last_ts = int(json.load(f).get("ts", 0))
+    except (FileNotFoundError, json.JSONDecodeError, ValueError, TypeError):
+        pass
+    try:
+        os.makedirs(_BOOT_DIR, exist_ok=True)
+        tmp = boot_file + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"ts": now_ts, "iso": datetime.now(timezone.utc).isoformat()}, f)
+        os.replace(tmp, boot_file)
+    except OSError as e:
+        log.warning(f"boot-dedup write failed: {e}")
+    return (now_ts - last_ts) > gap_seconds
+
+
 # ── LAST RENDER TRACKING (for regeneration) ──────────────────────────────────
 _last_render: dict = {}  # {brand, content_type, topic}
 
@@ -3229,7 +3259,14 @@ async def linkedin_token_monitor():
 async def linkedin_health_check():
     """Daily liveness probe — calls /rest/posts with author validation only and reports status per account."""
     await asyncio.sleep(60)  # let the app settle
+    # On warm restarts (<10 min since last boot), skip the first immediate
+    # send; fall through to the 24h sleep so the next fire stays on cadence.
+    first_pass_skip = not should_send_boot_message("mark_linkedin_health", gap_seconds=600)
     while True:
+        if first_pass_skip:
+            first_pass_skip = False
+            await asyncio.sleep(86400)
+            continue
         try:
             lines = ["LinkedIn daily health check:"]
             for acct, tok in LI_TOKENS.items():
