@@ -15,7 +15,23 @@ log = logging.getLogger(__name__)
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 BG_DIR = TEMPLATE_DIR / "backgrounds"
+FORZA_COVER_DIR = TEMPLATE_DIR / "forza_covers"
 ASSETS_DIR = TEMPLATE_DIR / "assets"
+
+
+def pick_forza_cover_photo(exclude: list[str] | None = None) -> str:
+    """Pick one photo from templates/forza_covers/ to sit behind the Forza
+    slide-1 composition. `exclude` is a list of full paths used in the last
+    7 days (same convention as pick_background). Falls back to the full pool
+    if exclusion empties it."""
+    all_photos = [str(p) for p in sorted(FORZA_COVER_DIR.glob("*.png")) + sorted(FORZA_COVER_DIR.glob("*.jpg"))]
+    if not all_photos:
+        return ""
+    excl = set(exclude or [])
+    pool = [p for p in all_photos if p not in excl]
+    if not pool:
+        pool = all_photos
+    return random.choice(pool)
 
 
 def _file_to_data_uri(path: str) -> str:
@@ -140,9 +156,11 @@ def _stripe_bg_html():
 
 
 def _forza_cover_blueprint(headline_top: str, headline_gold: str, headline_bottom: str,
-                            logo_path: str, accent_color: str = "#C5A86C") -> str:
+                            logo_path: str, accent_color: str = "#C5A86C",
+                            bg_image: str = "") -> str:
     """Forza cover variant: Blueprint — central hex core + 4 labelled infrastructure
     nodes on a gridded ink background. Original Forza cover design."""
+    photo_uri = _file_to_data_uri(bg_image) if bg_image else ""
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
@@ -152,7 +170,9 @@ def _forza_cover_blueprint(headline_top: str, headline_gold: str, headline_botto
         background:
           radial-gradient(circle at 72% 32%, rgba(230,195,120,0.28) 0%, transparent 42%),
           radial-gradient(ellipse at 22% 82%, rgba(180,140,70,0.18) 0%, transparent 55%),
-          linear-gradient(135deg, #2a2018 0%, #1a130c 50%, #0d0906 100%);
+          linear-gradient(135deg, rgba(42,32,24,{0.60 if photo_uri else 1}) 0%, rgba(26,19,12,{0.72 if photo_uri else 1}) 50%, rgba(13,9,6,{0.82 if photo_uri else 1}) 100%),
+          {f"url('{photo_uri}') center/cover no-repeat," if photo_uri else ""}
+          #0d0906;
         overflow: hidden;
     }}
     /* architectural blueprint grid — brighter so it reads at feed-thumbnail size */
@@ -488,16 +508,20 @@ def _forza_common_chrome(accent_color: str, page_no: str = "01", total: str = "0
 
 
 def _forza_cover_monolith(headline_top: str, headline_gold: str, headline_bottom: str,
-                           logo_path: str, accent_color: str = "#C5A86C") -> str:
+                           logo_path: str, accent_color: str = "#C5A86C",
+                           bg_image: str = "") -> str:
     """Variant: Monolith — a single towering gold chevron stack on the right half,
     strong directional light, headline anchored bottom-left. Vertical architecture,
     minimal composition. Reads at thumbnail because the chevron is a single bold silhouette."""
+    photo_uri = _file_to_data_uri(bg_image) if bg_image else ""
     return f"""{_forza_common_head(accent_color)}
     .slide {{
         background:
           radial-gradient(ellipse at 78% 50%, rgba(230,195,120,0.32) 0%, transparent 55%),
           radial-gradient(ellipse at 15% 15%, rgba(197,168,108,0.12) 0%, transparent 45%),
-          linear-gradient(105deg, #1a130c 0%, #231a12 40%, #110c08 100%);
+          linear-gradient(105deg, rgba(26,19,12,{0.60 if photo_uri else 1}) 0%, rgba(35,26,18,{0.72 if photo_uri else 1}) 40%, rgba(17,12,8,{0.82 if photo_uri else 1}) 100%),
+          {f"url('{photo_uri}') center/cover no-repeat," if photo_uri else ""}
+          #110c08;
         overflow: hidden;
     }}
     .stripes {{
@@ -592,16 +616,20 @@ def _forza_cover_monolith(headline_top: str, headline_gold: str, headline_bottom
 
 
 def _forza_cover_flow(headline_top: str, headline_gold: str, headline_bottom: str,
-                      logo_path: str, accent_color: str = "#C5A86C") -> str:
+                      logo_path: str, accent_color: str = "#C5A86C",
+                      bg_image: str = "") -> str:
     """Variant: Flow — horizontal INPUT → ENGINE → OUTPUT process diagram with
     gold pipes. Headline at top, diagram fills bottom half. Different reading
     direction from the other variants, works at thumbnail because the three
     anchored boxes + arrows are legible."""
+    photo_uri = _file_to_data_uri(bg_image) if bg_image else ""
     return f"""{_forza_common_head(accent_color)}
     .slide {{
         background:
           radial-gradient(ellipse at 50% 35%, rgba(230,195,120,0.22) 0%, transparent 55%),
-          linear-gradient(180deg, #26200e 0%, #15100a 55%, #0a0805 100%);
+          linear-gradient(180deg, rgba(38,32,14,{0.60 if photo_uri else 1}) 0%, rgba(21,16,10,{0.72 if photo_uri else 1}) 55%, rgba(10,8,5,{0.82 if photo_uri else 1}) 100%),
+          {f"url('{photo_uri}') center/cover no-repeat," if photo_uri else ""}
+          #0a0805;
         overflow: hidden;
     }}
     .dots {{
@@ -691,7 +719,8 @@ def _forza_cover_flow(headline_top: str, headline_gold: str, headline_bottom: st
 
 
 def _forza_cover_topology(headline_top: str, headline_gold: str, headline_bottom: str,
-                           logo_path: str, accent_color: str = "#C5A86C") -> str:
+                           logo_path: str, accent_color: str = "#C5A86C",
+                           bg_image: str = "") -> str:
     """Variant: Topology — concentric topographic contour rings radiating from the
     upper-right corner, like an elevation map. No hero SVG module; the background
     IS the visual. Headline gets centre-stage."""
@@ -701,12 +730,15 @@ def _forza_cover_topology(headline_top: str, headline_gold: str, headline_bottom
         opacity = max(0.08, 0.55 - (i * 0.025))
         stroke_width = 1.8 if i % 4 == 0 else 1.0
         contours += f'<circle cx="1080" cy="0" r="{r}" fill="none" stroke="{accent_color}" stroke-opacity="{opacity:.3f}" stroke-width="{stroke_width}"/>'
+    photo_uri = _file_to_data_uri(bg_image) if bg_image else ""
     return f"""{_forza_common_head(accent_color)}
     .slide {{
         background:
           radial-gradient(ellipse at 90% 0%, rgba(230,195,120,0.35) 0%, transparent 50%),
           radial-gradient(ellipse at 30% 100%, rgba(140,110,60,0.18) 0%, transparent 55%),
-          linear-gradient(160deg, #261d14 0%, #15100a 55%, #0a0805 100%);
+          linear-gradient(160deg, rgba(38,29,20,{0.60 if photo_uri else 1}) 0%, rgba(21,16,10,{0.72 if photo_uri else 1}) 55%, rgba(10,8,5,{0.82 if photo_uri else 1}) 100%),
+          {f"url('{photo_uri}') center/cover no-repeat," if photo_uri else ""}
+          #0a0805;
         overflow: hidden;
     }}
     .topo {{
@@ -775,13 +807,16 @@ def pick_forza_cover_variant(exclude: list[str] | None = None) -> str:
 
 def generate_forza_cover_slide(headline_top: str, headline_gold: str, headline_bottom: str,
                                 logo_path: str, accent_color: str = "#C5A86C",
-                                variant: str | None = None) -> tuple[str, str]:
+                                variant: str | None = None,
+                                bg_image: str = "") -> tuple[str, str]:
     """Dispatch to one of the Forza cover variants. Returns (html, variant_name)
-    so callers can record which variant was used for 7-day dedup."""
+    so callers can record which variant was used for 7-day dedup. `bg_image`
+    is the photo path (from templates/forza_covers/) that sits behind the
+    variant's existing hero + chrome."""
     if not variant or variant not in FORZA_COVER_VARIANTS:
         variant = pick_forza_cover_variant()
     fn = FORZA_COVER_VARIANTS[variant]
-    return fn(headline_top, headline_gold, headline_bottom, logo_path, accent_color), variant
+    return fn(headline_top, headline_gold, headline_bottom, logo_path, accent_color, bg_image), variant
 
 
 def generate_forza_cta_slide(cta_text: str, accent_color: str = "#C5A86C") -> str:
@@ -1196,14 +1231,18 @@ async def render_carousel(slides_content: list[dict], brand: str,
 
             if slide_type == "cover":
                 if is_forza:
-                    # Forza cover: pick one of the 4 template variants, avoiding
-                    # any used in the last 7 days (passed in via exclude_forza_variants).
+                    # Forza cover: pick one of the 4 template variants + one of
+                    # the Forza background photos. Both dedup across 7 days
+                    # (variant via exclude_forza_variants, photo via exclude_backgrounds).
                     variant = pick_forza_cover_variant(exclude_forza_variants)
+                    bg = pick_forza_cover_photo(exclude=exclude_backgrounds)
                     html, picked_variant = generate_forza_cover_slide(
                         slide["headline_top"], slide["headline_gold"], slide.get("headline_bottom", ""),
-                        logo_path, accent, variant=variant,
+                        logo_path, accent, variant=variant, bg_image=bg,
                     )
                     visuals_used["forza_cover_variant"] = picked_variant
+                    if bg:
+                        visuals_used["backgrounds"].append(bg)
                 else:
                     bg = slide.get("bg_image") or pick_background(
                         slide.get("headline_gold", ""), exclude=exclude_backgrounds,
