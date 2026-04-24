@@ -1731,22 +1731,80 @@ async def get_page_token(page_id: str) -> str | None:
     return None
 
 
-async def _get_public_image_url(image_bytes: bytes) -> str | None:
-    """Host image on Mark's server and return a public URL via Cloudflare tunnel."""
+GDRIVE_IG_UPLOAD_FOLDER_ID = os.getenv("GDRIVE_IG_UPLOAD_FOLDER_ID", "")
+
+
+async def _upload_jpeg_to_drive_public(jpeg_bytes: bytes) -> str | None:
+    """Upload a JPEG to Drive, grant anyone-with-link reader, return an
+    lh3.googleusercontent.com direct-download URL. IG/Meta refuses to fetch
+    from Railway `.up.railway.app` hosts — the lh3 domain is reliably fetched.
+
+    Returns the public lh3 URL or None on error."""
+    if not GDRIVE_IG_UPLOAD_FOLDER_ID:
+        log.error("GDRIVE_IG_UPLOAD_FOLDER_ID not configured")
+        return None
+    token = await _get_drive_upload_token()
+    if not token:
+        return None
+    fname = f"ig-{int(time.time()*1000)}-{str(uuid.uuid4())[:8]}.jpg"
+    metadata = json.dumps({"name": fname, "parents": [GDRIVE_IG_UPLOAD_FOLDER_ID]})
+    boundary = "mark_ig_upload_boundary"
+    body = (
+        f"--{boundary}\r\n"
+        f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+        f"{metadata}\r\n"
+        f"--{boundary}\r\n"
+        f"Content-Type: image/jpeg\r\n\r\n"
+    ).encode() + jpeg_bytes + f"\r\n--{boundary}--\r\n".encode()
     try:
-        # Convert PNG to JPEG for Instagram compatibility
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": f"multipart/related; boundary={boundary}"},
+                content=body,
+            )
+            if r.status_code not in (200, 201):
+                log.error(f"Drive IG-cache upload failed {r.status_code}: {r.text[:300]}")
+                return None
+            file_id = r.json().get("id")
+            if not file_id:
+                log.error(f"Drive IG-cache upload: no id in response: {r.text[:300]}")
+                return None
+            # Make publicly readable
+            perm = await client.post(
+                f"https://www.googleapis.com/drive/v3/files/{file_id}/permissions",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                content=json.dumps({"type": "anyone", "role": "reader"}).encode(),
+            )
+            if perm.status_code not in (200, 201):
+                log.error(f"Drive IG-cache perm failed {perm.status_code}: {perm.text[:200]}")
+                return None
+            return f"https://lh3.googleusercontent.com/d/{file_id}"
+    except Exception as e:
+        log.error(f"Drive IG-cache upload exception: {e}")
+    return None
+
+
+async def _get_public_image_url(image_bytes: bytes) -> str | None:
+    """Return a public image URL that Meta's fetcher will accept. Uploads to a
+    Drive cache folder (public read) and returns the lh3.googleusercontent.com
+    URL — Meta refuses .up.railway.app hosts."""
+    try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=92)
+        img.save(buf, format="JPEG", quality=92, optimize=True, progressive=False)
         jpeg_bytes = buf.getvalue()
-
+    except Exception as e:
+        log.error(f"JPEG re-encode failed: {e}")
+        return None
+    url = await _upload_jpeg_to_drive_public(jpeg_bytes)
+    if url:
+        log.info(f"IG image public URL: {url} ({len(jpeg_bytes)} bytes)")
+        # Also keep a copy locally for debugging via /img/
         image_id = str(uuid.uuid4())[:12]
         _temp_images[image_id] = jpeg_bytes
-        public_url = f"{RAILWAY_URL}/img/{image_id}"
-        log.info(f"Hosting image at {public_url} ({len(jpeg_bytes)} bytes)")
-        return public_url
-    except Exception as e:
-        log.error(f"Public URL generation error: {e}")
+        return url
+    log.error("_get_public_image_url: Drive upload failed; no Railway fallback (Meta cannot fetch it)")
     return None
 
 
@@ -2960,6 +3018,47 @@ async def serve_temp_image(image_id: str):
     if not img_bytes:
         return JSONResponse({"error": "not found"}, status_code=404)
     return Response(content=img_bytes, media_type="image/jpeg", headers=_img_headers(len(img_bytes)))
+
+
+@app.post("/admin/li_diag")
+async def admin_li_diag(request: Request):
+    """Dump LinkedIn token state + organizationAcls per account to pinpoint
+    org-post failures. Returns scope inferences without exposing tokens."""
+    body = await request.json()
+    if body.get("token", "") != os.getenv("ADMIN_TEST_TOKEN", "") or not body.get("token"):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    out: dict = {}
+    for acct, tok in LI_TOKENS.items():
+        at = tok.get("access_token", "")
+        if not at:
+            out[acct] = {"connected": False}
+            continue
+        info: dict = {
+            "connected": True,
+            "name": tok.get("name", ""),
+            "person_id": tok.get("person_id", ""),
+            "app": tok.get("app", ""),
+            "expiry_days_left": max(0, (int(tok.get("expiry", 0) or 0) - int(time.time())) // 86400),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(
+                    "https://api.linkedin.com/rest/organizationAcls",
+                    params={"q": "roleAssignee", "state": "APPROVED", "role": "ADMINISTRATOR"},
+                    headers=_li_versioned_headers(at),
+                )
+                info["orgAcls_status"] = r.status_code
+                if r.status_code == 200:
+                    elts = (r.json() or {}).get("elements", []) or []
+                    info["org_admin_of"] = [
+                        (e.get("organization") or e.get("organizationalTarget") or "") for e in elts
+                    ]
+                else:
+                    info["orgAcls_error"] = r.text[:300]
+        except Exception as e:
+            info["orgAcls_exc"] = f"{type(e).__name__}: {e}"
+        out[acct] = info
+    return out
 
 
 @app.post("/admin/test_channels")
