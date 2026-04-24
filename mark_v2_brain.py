@@ -43,16 +43,32 @@ _suggestion_sent_today = None  # date string
 
 # ── TELEGRAM HELPERS ──
 
-# Persistent bottom-of-chat menu — always visible so GG never has to type
-# or scroll for the common actions.
+# Persistent bottom-of-chat menu — always visible so GG can pick a brand
+# in one tap. Each button runs a per-brand topic suggestion: tap → Mark
+# researches ONE topic for that brand and offers Static / Carousel /
+# Regenerate inline. "suggest", "status", "help" still work as typed
+# commands for the old flows.
 PERSISTENT_KEYBOARD = {
     "keyboard": [
-        [{"text": "💡 Suggestions"}, {"text": "📊 Status"}],
-        [{"text": "❓ Help"}],
+        [{"text": "🏢 Nucassa RE"}, {"text": "💼 Nucassa Holdings"}],
+        [{"text": "🏠 ListR"}, {"text": "⚙️ Forza"}],
     ],
     "resize_keyboard": True,
     "is_persistent": True,
-    "input_field_placeholder": "Tap a button or type…",
+    "input_field_placeholder": "Tap a brand or type…",
+}
+
+# Canonical brand-key lookup for persistent-keyboard taps. Keys are
+# whitespace-lowercased (emoji stripped) so we match however Telegram
+# renders the label back. Also catches common typed variants.
+BRAND_BUTTON_MAP = {
+    "nucassa re":           "nucassa_re",
+    "nucassa real estate":  "nucassa_re",
+    "nucassa holdings":     "nucassa_holdings",
+    "holdings":             "nucassa_holdings",
+    "listr":                "listr",
+    "listr.ae":             "listr",
+    "forza":                "forza",
 }
 
 
@@ -149,6 +165,63 @@ async def send_morning_suggestions():
         )
 
     _suggestion_sent_today = datetime.now(DUBAI_TZ).strftime("%Y-%m-%d")
+
+
+BRAND_DISPLAY = {
+    "nucassa_re":       "Nucassa Real Estate",
+    "nucassa_holdings": "Nucassa Holdings",
+    "listr":            "ListR.ae",
+    "forza":            "Forza",
+}
+
+
+async def send_brand_suggestion(brand: str):
+    """Generate ONE topic suggestion for a single brand (triggered by the
+    persistent-keyboard brand buttons). Presents the topic + angle with
+    Static / Carousel / Regenerate inline actions so GG can pick a format
+    in one more tap.
+
+    Under the hood this reuses get_morning_suggestions() — a single Claude
+    call with web search that researches all four brands — and filters the
+    result to the tapped brand. The waste of researching the other three
+    brands is tolerable because (a) the call is cached for a minute on
+    warm-path reuse and (b) the alternative is duplicating the entire
+    per-brand prompt logic, which is worse to maintain than a filtered
+    multi-brand call."""
+    global _pending_suggestions
+    from content_brain import get_morning_suggestions
+
+    display = BRAND_DISPLAY.get(brand, brand.replace("_", " ").title())
+    await send_tg(f"_Researching a topic for {display}..._")
+
+    result = await get_morning_suggestions()
+    if "error" in result:
+        await send_tg(f"Research failed for {display}: {result['error']}")
+        return
+    suggestions = result.get("suggestions", []) or []
+    match = next((s for s in suggestions if s.get("brand") == brand), None)
+    if not match:
+        await send_tg(f"No topic surfaced for {display} right now. Try again in a few minutes.")
+        return
+
+    topic = match["topic"]
+    angle = match["angle"]
+    if _pending_suggestions is None:
+        _pending_suggestions = {}
+    _pending_suggestions[brand] = {"topic": topic, "angle": angle}
+
+    markup = {"inline_keyboard": [
+        [{"text": "📸 Static", "callback_data": f"sug_static|{brand}"},
+         {"text": "🎠 Carousel", "callback_data": f"sug_carousel|{brand}"}],
+        [{"text": "🔄 Regenerate", "callback_data": f"sug_regen|{brand}"}],
+    ]}
+
+    await send_tg(
+        f"*{display}*\n\n"
+        f"*Topic:* {topic}\n\n"
+        f"_{angle}_",
+        reply_markup=markup,
+    )
 
 
 # ── CONTENT GENERATION + RENDERING ──
@@ -456,13 +529,20 @@ async def mark_v2_listener():
                     continue
 
                 text_lower = text.lower()
-                # Strip emoji prefix from persistent keyboard buttons
+                # Strip any emoji prefix from persistent-keyboard buttons so
+                # the match works on the bare brand label or bare command.
                 text_clean = text_lower
-                for emoji in ("💡 ", "📊 ", "❓ "):
+                for emoji in ("💡 ", "📊 ", "❓ ", "🏢 ", "💼 ", "🏠 ", "⚙️ "):
                     text_clean = text_clean.replace(emoji, "")
                 text_clean = text_clean.strip()
 
-                # Suggest — also matches "💡 Suggestions" button
+                # Brand buttons (persistent keyboard) — tap goes straight to a
+                # per-brand topic suggestion with Static / Carousel / Regenerate.
+                if text_clean in BRAND_BUTTON_MAP:
+                    await send_brand_suggestion(BRAND_BUTTON_MAP[text_clean])
+                    continue
+
+                # Suggest — typed command, still returns all 4 brands at once.
                 if text_clean.startswith("suggest") or any(text_lower.startswith(w) for w in ["suggest", "morning", "ideas", "topics", "💡"]):
                     await send_morning_suggestions()
 
