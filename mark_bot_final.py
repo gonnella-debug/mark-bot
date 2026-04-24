@@ -1800,9 +1800,10 @@ async def _get_public_image_url(image_bytes: bytes) -> str | None:
     url = await _upload_jpeg_to_drive_public(jpeg_bytes)
     if url:
         log.info(f"IG image public URL: {url} ({len(jpeg_bytes)} bytes)")
-        # Also keep a copy locally for debugging via /img/
+        # Also keep a copy locally for debugging via /img/ (TTL-bounded).
         image_id = str(uuid.uuid4())[:12]
         _temp_images[image_id] = jpeg_bytes
+        _temp_images_ts[image_id] = time.time()
         return url
     log.error("_get_public_image_url: Drive upload failed; no Railway fallback (Meta cannot fetch it)")
     return None
@@ -2300,20 +2301,36 @@ async def publish_linkedin_personal_carousel(account: str, images_bytes_list: li
 
 
 async def publish_linkedin_carousel(page_id: str, images_bytes_list: list, caption: str, title: str = "", admin_account: str = "gg") -> dict:
-    """Post a multi-slide PDF carousel to a LinkedIn organization page using the given admin token."""
+    """Post a multi-slide PDF carousel to a LinkedIn organization page.
+
+    LinkedIn's /rest/documents initializeUpload rejects an organization URN
+    as owner when the calling token has personal (w_member_social) auth
+    only — "Organization permissions must be used when using organization
+    as owner". The reliable pattern: upload the document owned by the
+    admin PERSON, then publish the post authored by the ORGANIZATION.
+    LinkedIn allows a cross-owner reference in the post body."""
     tok = LI_TOKENS.get(admin_account, {})
     access_token = tok.get("access_token", "")
+    person_id = tok.get("person_id", "")
     if not access_token:
         return {"error": f"LinkedIn ({admin_account}) not authenticated"}
-    owner = f"urn:li:organization:{page_id}"
     try:
         pdf_bytes = _images_to_pdf_bytes(images_bytes_list)
     except Exception as e:
         return {"error": f"PDF build failed: {e}"}
-    asset = await _upload_pdf_to_li(pdf_bytes, owner, access_token)
+    org_owner = f"urn:li:organization:{page_id}"
+    # Attempt 1: upload owned by the org (works if the token has
+    # w_organization_social AND the person is ADMIN of this org).
+    asset = await _upload_pdf_to_li(pdf_bytes, org_owner, access_token)
+    # Attempt 2: fallback — upload owned by the admin person, then post as org.
+    # This works for any admin with w_member_social even if LinkedIn's newer
+    # org-scope gates have tightened on documents.
+    if not asset and person_id:
+        log.warning(f"LI org doc upload failed ({_last_li_upload_error}); retrying with person owner {admin_account}")
+        asset = await _upload_pdf_to_li(pdf_bytes, f"urn:li:person:{person_id}", access_token)
     if not asset:
         return {"error": f"PDF upload to LinkedIn failed ({_last_li_upload_error or 'no detail'})"}
-    return await _li_post_document(owner, access_token, asset, caption, title)
+    return await _li_post_document(org_owner, access_token, asset, caption, title)
 
 
 # ── PERMALINK FETCHING ────────────────────────────────────────────────────────
@@ -3013,11 +3030,35 @@ async def head_temp_image(image_id: str):
 @app.get("/img/{image_id}")
 async def serve_temp_image(image_id: str):
     """Serve a temporary image for Instagram/LinkedIn fetchers. Meta's fetcher
-    issues HEAD first; the paired @app.head above makes that return 200."""
+    issues HEAD first; the paired @app.head above makes that return 200.
+
+    Note: the primary IG path now hosts images via Drive (lh3 URLs). _temp_images
+    is kept as a local diagnostic cache only — a TTL sweeper bounds its size so
+    it can't grow unbounded across many renders."""
     img_bytes = _temp_images.get(image_id)
     if not img_bytes:
         return JSONResponse({"error": "not found"}, status_code=404)
     return Response(content=img_bytes, media_type="image/jpeg", headers=_img_headers(len(img_bytes)))
+
+
+_temp_images_ts: dict = {}   # image_id → timestamp inserted, used by the TTL sweeper
+
+
+async def _temp_images_sweeper():
+    """Evict entries older than 30 min so _temp_images can't bloat memory on
+    long-running containers. Runs silently in the background."""
+    while True:
+        try:
+            cutoff = time.time() - 30 * 60
+            stale = [k for k, ts in list(_temp_images_ts.items()) if ts < cutoff]
+            for k in stale:
+                _temp_images.pop(k, None)
+                _temp_images_ts.pop(k, None)
+            if stale:
+                log.info(f"_temp_images sweeper: dropped {len(stale)} stale entries")
+        except Exception as e:
+            log.error(f"_temp_images sweeper error: {e}")
+        await asyncio.sleep(300)
 
 
 @app.post("/admin/li_diag")
@@ -3328,6 +3369,14 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
     elif content_type in ("static", "story"):
         img = await render_static_image(content, brand)
         rendered_images = [img] if img else []
+    # Guard: never show POST NOW buttons if there is nothing to post. A render
+    # failure would otherwise leave GG approving ghost content.
+    if not rendered_images:
+        await send_telegram(
+            f"⚠️ Render failed for *{BRANDS[brand]['name']}* ({content_type}) — 3 attempts, still no images. "
+            f"Not showing POST buttons. Check Playwright logs on Railway."
+        )
+        return
     for i, img_bytes in enumerate(rendered_images):
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
@@ -3520,6 +3569,7 @@ async def refresh_linkedin_token():
             LI_TOKENS[account]["access_token"] = data["access_token"]
             LI_TOKENS[account]["refresh_token"] = data.get("refresh_token", refresh_token)
             LI_TOKENS[account]["expiry"] = int(time.time()) + data.get("expires_in", 5184000)
+            LI_TOKENS[account]["scope"] = data.get("scope", LI_TOKENS[account].get("scope", ""))
             refreshed_any = True
             days_valid = data.get("expires_in", 5184000) // 86400
             await send_telegram(f"LinkedIn token refreshed ({account}) — valid for {days_valid} days")
@@ -3597,4 +3647,5 @@ async def startup():
     asyncio.create_task(mark_v2_listener())
     asyncio.create_task(linkedin_token_monitor())
     asyncio.create_task(linkedin_health_check())
+    asyncio.create_task(_temp_images_sweeper())
     log.info("Mark v2 — Autonomous Marketing Brain — online")
