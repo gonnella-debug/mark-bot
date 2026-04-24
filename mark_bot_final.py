@@ -1653,17 +1653,37 @@ def _recent_visuals_for_brand(brand: str, days: int = 7) -> dict:
 async def render_carousel_images(content: dict, brand: str) -> tuple[list[bytes], dict]:
     """Render all carousel slides. Returns (images, visuals_used). visuals_used
     records which backgrounds + Forza cover variant were picked so the caller
-    can persist them to posting_log for next-run dedup."""
+    can persist them to posting_log for next-run dedup.
+
+    Playwright occasionally hangs/crashes mid-render on Railway. Retry up to 3x
+    with a short backoff before giving up and returning [] — callers treat []
+    as a hard render failure."""
     from renderer import render_carousel
     slides = content.get("slides", [])
     if not slides:
         return [], {"backgrounds": [], "forza_cover_variant": None}
     recent = _recent_visuals_for_brand(brand, days=7)
-    return await render_carousel(
-        slides, brand,
-        exclude_backgrounds=recent["backgrounds"],
-        exclude_forza_variants=recent["forza_cover_variants"],
-    )
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            imgs, vis = await asyncio.wait_for(
+                render_carousel(
+                    slides, brand,
+                    exclude_backgrounds=recent["backgrounds"],
+                    exclude_forza_variants=recent["forza_cover_variants"],
+                ),
+                timeout=180,
+            )
+            if imgs and len(imgs) == len(slides):
+                return imgs, vis
+            log.warning(f"render_carousel attempt {attempt+1}/3: got {len(imgs or [])} of {len(slides)} slides — retrying")
+        except Exception as e:
+            last_exc = e
+            log.error(f"render_carousel attempt {attempt+1}/3 failed: {type(e).__name__}: {e}")
+        if attempt < 2:
+            await asyncio.sleep(30)
+    log.error(f"render_carousel gave up after 3 attempts for {brand}; last_exc={last_exc}")
+    return [], {"backgrounds": [], "forza_cover_variant": None}
 
 
 async def render_static_image(content: dict, brand: str) -> bytes | None:
@@ -2128,9 +2148,15 @@ def _li_versioned_headers(access_token: str) -> dict:
     }
 
 
+_last_li_upload_error: str = ""
+
+
 async def _upload_pdf_to_li(pdf_bytes: bytes, owner_urn: str, access_token: str) -> str | None:
     """Upload PDF doc via LinkedIn Versioned /rest/documents API. Returns urn:li:document:..."""
+    global _last_li_upload_error
+    _last_li_upload_error = ""
     if not access_token:
+        _last_li_upload_error = "no access_token"
         return None
     try:
         async with httpx.AsyncClient(timeout=60) as client:
@@ -2140,20 +2166,24 @@ async def _upload_pdf_to_li(pdf_bytes: bytes, owner_urn: str, access_token: str)
                 json={"initializeUploadRequest": {"owner": owner_urn}},
             )
             if r.status_code not in (200, 201):
-                log.error(f"LI doc init HTTP {r.status_code} ({owner_urn}): {r.text[:300]}")
+                _last_li_upload_error = f"init HTTP {r.status_code}: {r.text[:400]}"
+                log.error(f"LI doc init HTTP {r.status_code} ({owner_urn}): {r.text[:400]}")
                 return None
             data = r.json()
             value = data.get("value") or {}
             upload_url = value.get("uploadUrl")
             doc_urn = value.get("document")
             if not upload_url or not doc_urn:
+                _last_li_upload_error = f"init missing upload fields: {str(data)[:400]}"
                 log.error(f"LI doc init missing fields ({owner_urn}): {data}")
                 return None
             r2 = await client.put(upload_url, content=pdf_bytes)
             if r2.status_code in (200, 201):
                 return doc_urn
-            log.error(f"LI doc PUT HTTP {r2.status_code} ({owner_urn}): {r2.text[:200]}")
+            _last_li_upload_error = f"PUT HTTP {r2.status_code}: {r2.text[:300]}"
+            log.error(f"LI doc PUT HTTP {r2.status_code} ({owner_urn}): {r2.text[:300]}")
     except Exception as e:
+        _last_li_upload_error = f"exception {type(e).__name__}: {e}"
         log.error(f"LI doc upload error ({owner_urn}): {e}")
     return None
 
@@ -2207,7 +2237,7 @@ async def publish_linkedin_personal_carousel(account: str, images_bytes_list: li
         return {"error": f"PDF build failed: {e}"}
     asset = await _upload_pdf_to_li(pdf_bytes, owner, access_token)
     if not asset:
-        return {"error": "PDF upload to LinkedIn failed"}
+        return {"error": f"PDF upload to LinkedIn failed ({_last_li_upload_error or 'no detail'})"}
     return await _li_post_document(owner, access_token, asset, caption, title)
 
 
@@ -2224,8 +2254,112 @@ async def publish_linkedin_carousel(page_id: str, images_bytes_list: list, capti
         return {"error": f"PDF build failed: {e}"}
     asset = await _upload_pdf_to_li(pdf_bytes, owner, access_token)
     if not asset:
-        return {"error": "PDF upload to LinkedIn failed"}
+        return {"error": f"PDF upload to LinkedIn failed ({_last_li_upload_error or 'no detail'})"}
     return await _li_post_document(owner, access_token, asset, caption, title)
+
+
+# ── PERMALINK FETCHING ────────────────────────────────────────────────────────
+
+async def _ig_permalink(media_id: str) -> str:
+    """Fetch IG permalink for a published media_id. Returns url or ''. Never raises."""
+    if not media_id:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"https://graph.facebook.com/v18.0/{media_id}",
+                params={"access_token": META_SYSTEM_TOKEN, "fields": "permalink"},
+            )
+            return r.json().get("permalink", "") or ""
+    except Exception:
+        return ""
+
+
+async def _fb_permalink(post_id: str, page_id: str) -> str:
+    """Fetch FB permalink for a published post_id (form `{pageid}_{postid}` or just postid)."""
+    if not post_id:
+        return ""
+    try:
+        page_token = await get_page_token(page_id) or META_SYSTEM_TOKEN
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"https://graph.facebook.com/v18.0/{post_id}",
+                params={"access_token": page_token, "fields": "permalink_url"},
+            )
+            return r.json().get("permalink_url", "") or ""
+    except Exception:
+        return ""
+
+
+def _li_permalink(post_id: str) -> str:
+    """Build a LinkedIn feed URL from a returned URN like 'urn:li:share:...' or 'urn:li:activity:...'."""
+    if not post_id:
+        return ""
+    if post_id.startswith("urn:li:"):
+        return f"https://www.linkedin.com/feed/update/{post_id}/"
+    return post_id  # already a URL
+
+
+def _err_str(v) -> str:
+    """Extract a readable error message from a platform-result dict, else ''."""
+    if not isinstance(v, dict):
+        return ""
+    if "error" in v:
+        e = v.get("error")
+        if isinstance(e, dict):
+            return str(e.get("message") or e)[:200]
+        return str(e)[:200]
+    return ""
+
+
+async def _build_post_summary(brand: str, results: dict, cfg: dict) -> str:
+    """Build the single consolidated Telegram message for GG: one line per channel with link-or-reason."""
+    brand_name = cfg["name"]
+    fb_page_id = cfg.get("fb_page_id") or ""
+    lines: list[str] = []
+    any_fail = False
+
+    # Instagram
+    ig = results.get("instagram")
+    if ig is not None:
+        err = _err_str(ig)
+        if err:
+            any_fail = True
+            lines.append(f"IG: FAIL — {err}")
+        else:
+            media_id = ig.get("id") if isinstance(ig, dict) else ""
+            url = await _ig_permalink(media_id)
+            lines.append(f"IG: OK {url}".rstrip())
+
+    # Facebook
+    fb = results.get("facebook")
+    if fb is not None:
+        err = _err_str(fb)
+        if err:
+            any_fail = True
+            lines.append(f"FB: FAIL — {err}")
+        else:
+            post_id = fb.get("id") or fb.get("post_id") if isinstance(fb, dict) else ""
+            url = await _fb_permalink(post_id, fb_page_id)
+            lines.append(f"FB: OK {url}".rstrip())
+
+    # LinkedIn (company + any personal cross-posts)
+    li = results.get("linkedin")
+    if isinstance(li, dict) and li:
+        for sub, v in li.items():
+            err = _err_str(v)
+            if err:
+                any_fail = True
+                lines.append(f"LinkedIn/{sub}: FAIL — {err}")
+            else:
+                pid = v.get("id") if isinstance(v, dict) else ""
+                url = _li_permalink(pid)
+                lines.append(f"LinkedIn/{sub}: OK {url}".rstrip())
+
+    header = ("⚠️ " if any_fail else "✅ ") + f"{brand_name} posted"
+    if any_fail:
+        header += " (partial)"
+    return header + "\n" + "\n".join(lines)
 
 
 # ── POST CONTENT ──────────────────────────────────────────────────────────────
@@ -2375,35 +2509,12 @@ async def post_content(content: dict, brand: str) -> dict:
             pass
         results["files_sent"] = True
 
-    # Per-platform success/fail summary — plain text, no markdown so it can't 400
+    # Single consolidated summary — one Telegram per brand post, with live links
     try:
-        lines = [f"{BRANDS[brand]['name']} post results:"]
-        any_fail = False
-        for pkey in ("instagram", "facebook"):
-            v = results.get(pkey)
-            if v is None:
-                continue
-            if isinstance(v, dict) and "error" in str(v):
-                lines.append(f"  - {pkey}: FAIL — {str(v.get('error', v))[:140]}")
-                any_fail = True
-            else:
-                lines.append(f"  - {pkey}: OK")
-        li = results.get("linkedin")
-        if isinstance(li, dict) and li:
-            for sub, v in li.items():
-                if isinstance(v, dict) and "error" in str(v):
-                    lines.append(f"  - linkedin/{sub}: FAIL — {str(v.get('error', v))[:140]}")
-                    any_fail = True
-                else:
-                    lines.append(f"  - linkedin/{sub}: OK")
-        if any_fail:
-            lines.append("Files sent above — post failed channels manually.")
-        try:
-            await _tg_send_plain("\n".join(lines))
-        except Exception as e:
-            log.error(f"per-platform alert send failed: {e}")
+        summary = await _build_post_summary(brand, results, cfg)
+        await _tg_send_plain(summary)
     except Exception as e:
-        log.error(f"per-platform summary build failed: {e}")
+        log.error(f"summary build/send failed: {e}")
 
     # Record to posting log so Alex can query what was published
     platform_count = sum(1 for k, v in results.items() if k not in ("drive_saved", "files_sent") and "error" not in str(v))
@@ -2746,30 +2857,22 @@ async def handle_callback(update: dict):
     if action == "approve_single":
         await answer_callback(cb_id, "Approved ✅")
         pending_approvals.pop(msg_id, None)
-        await send_telegram(f"_Saving to Drive and posting {BRANDS[brand]['name']} content..._")
         # Use cached rendered images if available to avoid re-rendering
         cached_b64 = content.pop("_rendered_images_b64", [])
         if cached_b64:
             cached_images = [base64.b64decode(b) for b in cached_b64]
             content["_cached_images"] = cached_images
-        results = await post_content(content, brand)
-        platform_count = sum(1 for k, v in results.items() if k != "drive_saved" and "error" not in str(v))
-        total_platforms = sum(1 for k in results if k != "drive_saved")
-        drive_line = ""
-        await send_telegram(f"✅ *Approved — {BRANDS[brand]['name']}*\n{platform_count}/{total_platforms} platforms posted{drive_line}")
+        await post_content(content, brand)
+        # post_content sends the single consolidated summary — no extra message.
 
     elif action == "post_now":
         await answer_callback(cb_id, "Posting now ✅")
         pending_approvals.pop(msg_id, None)
-        await send_telegram(f"_Posting {BRANDS[brand]['name']} content now..._")
         cached_b64 = content.pop("_rendered_images_b64", [])
         if cached_b64:
             content["_cached_images"] = [base64.b64decode(b) for b in cached_b64]
-        results = await post_content(content, brand)
-        platform_count = sum(1 for k, v in results.items() if k != "drive_saved" and "error" not in str(v))
-        total_platforms = sum(1 for k in results if k != "drive_saved")
-        drive_line = ""
-        await send_telegram(f"✅ *Posted — {BRANDS[brand]['name']}*\n{platform_count}/{total_platforms} platforms posted{drive_line}")
+        await post_content(content, brand)
+        # post_content sends the single consolidated summary — no extra message.
 
     elif action == "schedule_6pm":
         await answer_callback(cb_id, "Scheduled for 6pm Dubai 🕕")
@@ -2790,11 +2893,8 @@ async def handle_callback(update: dict):
             cached_b64 = content.pop("_rendered_images_b64", [])
             if cached_b64:
                 content["_cached_images"] = [base64.b64decode(b) for b in cached_b64]
-            results = await post_content(content, brand)
-            platform_count = sum(1 for k, v in results.items() if k != "drive_saved" and "error" not in str(v))
-            total_platforms = sum(1 for k in results if k != "drive_saved")
-            drive_line = ""
-            await send_telegram(f"✅ *6pm post live — {BRANDS[brand]['name']}*\n{platform_count}/{total_platforms} platforms posted{drive_line}")
+            await post_content(content, brand)
+            # post_content sends the single consolidated summary — no extra message.
 
         asyncio.create_task(_delayed_post())
 
@@ -2835,13 +2935,31 @@ async def handle_callback(update: dict):
 from fastapi.responses import Response
 
 
+def _img_headers(n: int) -> dict:
+    return {
+        "Content-Type": "image/jpeg",
+        "Content-Length": str(n),
+        "Cache-Control": "public, max-age=3600",
+        "Accept-Ranges": "bytes",
+    }
+
+
+@app.head("/img/{image_id}")
+async def head_temp_image(image_id: str):
+    img_bytes = _temp_images.get(image_id)
+    if not img_bytes:
+        return Response(status_code=404)
+    return Response(status_code=200, headers=_img_headers(len(img_bytes)))
+
+
 @app.get("/img/{image_id}")
 async def serve_temp_image(image_id: str):
-    """Serve a temporary image for Instagram upload."""
+    """Serve a temporary image for Instagram/LinkedIn fetchers. Meta's fetcher
+    issues HEAD first; the paired @app.head above makes that return 200."""
     img_bytes = _temp_images.get(image_id)
     if not img_bytes:
         return JSONResponse({"error": "not found"}, status_code=404)
-    return Response(content=img_bytes, media_type="image/jpeg")
+    return Response(content=img_bytes, media_type="image/jpeg", headers=_img_headers(len(img_bytes)))
 
 
 @app.get("/")
