@@ -2962,6 +2962,75 @@ async def serve_temp_image(image_id: str):
     return Response(content=img_bytes, media_type="image/jpeg", headers=_img_headers(len(img_bytes)))
 
 
+@app.post("/admin/test_channels")
+async def admin_test_channels(request: Request):
+    """Internal E2E verifier — renders one slide, tries IG container upload +
+    LI doc upload without publishing. Confirms media pipes are unblocked.
+    Body: {"brand": "nucassa_re", "token": "<shared_secret>"}"""
+    body = await request.json()
+    token = body.get("token", "")
+    if token != os.getenv("ADMIN_TEST_TOKEN", "") or not token:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    brand = body.get("brand", "nucassa_re")
+    if brand not in BRANDS:
+        return JSONResponse({"error": f"unknown brand {brand}"}, status_code=400)
+    cfg = BRANDS[brand]
+
+    # Tiny 2-slide render so we exercise the cover + data path
+    sample = {
+        "slides": [
+            {"type": "cover", "headline_top": "Pipeline check",
+             "headline_gold": cfg["name"], "headline_bottom": "internal test"},
+            {"type": "data", "headline_gold": "Test",
+             "headline_white": "Pipeline", "bullets": ["alpha: 1", "beta: 2", "gamma: 3"]},
+        ]
+    }
+    images, _vis = await render_carousel_images(sample, brand)
+    out: dict = {"brand": brand, "slides_rendered": len(images)}
+
+    # IG container upload (doesn't publish)
+    ig_id = cfg.get("ig_account_id")
+    if "instagram" in cfg["platforms"] and ig_id and images:
+        cid = await upload_image_to_ig(ig_id, images[0], "", is_carousel_item=True)
+        out["ig_container"] = cid or f"FAIL: {_last_ig_upload_error or 'no detail'}"
+
+    # LinkedIn doc upload (doesn't publish). Org owner.
+    if "linkedin" in cfg["platforms"] and cfg.get("li_page_id") and images:
+        admin_account = cfg.get("li_admin_account", "gg")
+        tok = LI_TOKENS.get(admin_account, {})
+        at = tok.get("access_token", "")
+        if not at:
+            out["li_org_doc"] = f"FAIL: {admin_account} not authenticated"
+        else:
+            try:
+                pdf = _images_to_pdf_bytes(images)
+                owner = f"urn:li:organization:{cfg['li_page_id']}"
+                asset = await _upload_pdf_to_li(pdf, owner, at)
+                out["li_org_doc"] = asset or f"FAIL: {_last_li_upload_error or 'no detail'}"
+            except Exception as e:
+                out["li_org_doc"] = f"FAIL: PDF build {type(e).__name__}: {e}"
+
+    # LinkedIn personal doc upload for cross-post accounts
+    for acct in cfg.get("li_personal_accounts", []) or []:
+        if not images:
+            break
+        tok = LI_TOKENS.get(acct, {})
+        at = tok.get("access_token", "")
+        pid = tok.get("person_id", "")
+        if not at or not pid:
+            out[f"li_personal_{acct}_doc"] = f"FAIL: {acct} not authenticated"
+            continue
+        try:
+            pdf = _images_to_pdf_bytes(images)
+            owner = f"urn:li:person:{pid}"
+            asset = await _upload_pdf_to_li(pdf, owner, at)
+            out[f"li_personal_{acct}_doc"] = asset or f"FAIL: {_last_li_upload_error or 'no detail'}"
+        except Exception as e:
+            out[f"li_personal_{acct}_doc"] = f"FAIL: PDF build {type(e).__name__}: {e}"
+
+    return out
+
+
 @app.get("/")
 async def health():
     li_accounts = {a: bool(LI_TOKENS.get(a, {}).get("access_token")) for a in ("gg", "emma")}
