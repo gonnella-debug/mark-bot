@@ -232,7 +232,7 @@ async def generate_and_render(brand: str, topic: str, content_type: str = "carou
     from content_brain import search_and_generate
     from renderer import render_carousel
 
-    brand_display = {"nucassa_re": "Nucassa RE", "nucassa_holdings": "Holdings", "listr": "ListR"}
+    brand_display = {"nucassa_re": "Nucassa RE", "nucassa_holdings": "Holdings", "listr": "ListR", "forza": "Forza"}
     await send_tg(f"_Creating {content_type} for {brand_display.get(brand, brand)}..._")
 
     content = await search_and_generate(brand, topic)
@@ -252,13 +252,26 @@ async def generate_and_render(brand: str, topic: str, content_type: str = "carou
             slides = content["slides"][:1]
 
     await send_tg(f"_Rendering {len(slides)} slides..._")
-    images = await render_carousel(slides, brand)
+    # render_carousel returns a (images, visuals_used) tuple — it is NOT a
+    # bare list of bytes. Earlier code assigned the whole tuple to `images`,
+    # which silently failed every preview send (iterating a 2-tuple of a
+    # list and a dict) and also stored the tuple in _pending_render so the
+    # eventual POST NOW path choked. Unpack correctly.
+    images, _visuals = await render_carousel(slides, brand)
 
-    if not images:
-        await send_tg("Rendering failed.")
+    # Slide-1-is-non-negotiable guard (GG rule 2026-04-24). Same bar as the
+    # _run_single preview path in mark_bot_final.py — no buttons, no post,
+    # if slide 1 is missing, empty, or under 1 KB.
+    slide_1_ok = bool(images) and bool(images[0]) and len(images[0]) > 1024
+    if not slide_1_ok:
+        why = "no slides rendered" if not images else "cover slide (slide 1) is empty or too small"
+        await send_tg(
+            f"⚠️ Render failed for *{brand_display.get(brand, brand)}* ({content_type}) — {why}. "
+            f"Not showing POST buttons — no post goes out without a working slide 1."
+        )
         return
 
-    # Send preview
+    # Send preview — each slide as its own Telegram photo.
     for i, img in enumerate(images):
         cap = f"*Slide {i+1}/{len(images)}*"
         await send_tg_photo(img, cap)
@@ -267,7 +280,7 @@ async def generate_and_render(brand: str, topic: str, content_type: str = "carou
     if caption:
         await send_tg(f"*Caption:*\n{caption[:500]}")
 
-    # Store pending
+    # Store pending — the images list, NOT the tuple.
     _pending_render = {
         "brand": brand,
         "content": content,
