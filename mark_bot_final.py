@@ -2476,8 +2476,23 @@ async def post_content(content: dict, brand: str) -> dict:
         else:
             images = []  # reels = text/script only
 
-    if not images and ct not in ("reels",):
-        log.warning(f"No images rendered for {brand} — posting may fail")
+    # Slide-1-is-non-negotiable guard. GG's rule: a post without a working
+    # cover never goes live. If posting is about to fire with no images, or
+    # the cover slide is empty, abort the whole post, tell GG, and record
+    # the failure — do not half-post to any channel.
+    if ct not in ("reels",):
+        slide_1_ok = bool(images) and bool(images[0]) and len(images[0]) > 1024
+        if not slide_1_ok:
+            reason = "no slides rendered" if not images else "cover slide is empty or too small"
+            log.error(f"post_content aborted for {brand} — {reason}")
+            try:
+                await _tg_send_plain(
+                    f"⚠️ {BRANDS[brand]['name']} post ABORTED — {reason}. Nothing posted to any channel."
+                )
+            except Exception:
+                pass
+            results["error"] = f"aborted: {reason}"
+            return results
 
     # Cache the successful render so we can re-post to a single platform without re-rendering
     if images:
@@ -3382,12 +3397,19 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
     elif content_type in ("static", "story"):
         img = await render_static_image(content, brand)
         rendered_images = [img] if img else []
-    # Guard: never show POST NOW buttons if there is nothing to post. A render
-    # failure would otherwise leave GG approving ghost content.
-    if not rendered_images:
+    # Guard: slide 1 is non-negotiable. GG's rule — a post without a working
+    # cover never goes live. If the renderer produced NO images at all, or
+    # the cover image (slot 0) is empty/zero-bytes, abort before showing any
+    # POST buttons. GG never has to look at approve-on-ghost-content.
+    slide_1_ok = bool(rendered_images) and bool(rendered_images[0]) and len(rendered_images[0]) > 1024
+    if not slide_1_ok:
+        why = "no slides rendered" if not rendered_images else (
+            "cover slide (slide 1) is empty or too small — abort" if not rendered_images[0] or len(rendered_images[0]) <= 1024
+            else "unknown render state"
+        )
         await send_telegram(
-            f"⚠️ Render failed for *{BRANDS[brand]['name']}* ({content_type}) — 3 attempts, still no images. "
-            f"Not showing POST buttons. Check Playwright logs on Railway."
+            f"⚠️ Render failed for *{BRANDS[brand]['name']}* ({content_type}) — {why}. "
+            f"Not showing POST buttons — no post goes out without a working slide 1."
         )
         return
     for i, img_bytes in enumerate(rendered_images):
