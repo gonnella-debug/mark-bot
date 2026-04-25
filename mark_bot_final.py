@@ -2525,16 +2525,21 @@ async def post_content(content: dict, brand: str) -> dict:
                     await asyncio.sleep(1)
                 if failed_slide:
                     err_detail = _last_ig_upload_error or "no detail captured"
-                    results["instagram"] = {"error": f"Slide {failed_slide} upload failed after 3 retries — carousel aborted to avoid partial post: {err_detail}"}
-                    await send_telegram(
-                        f"⚠️ *{BRANDS[brand]['name']} — IG carousel aborted*\n"
-                        f"Slide {failed_slide} failed after 3 retries. Not posting partial carousel.\n\n"
-                        f"`{err_detail[:400]}`"
+                    # IG silent-skip: don't blast a separate "ABORTED" Telegram
+                    # — the consolidated post-summary already shows IG: FAIL
+                    # with detail. FB + LinkedIn still publish below. Forza IG
+                    # is currently account-restricted (GG handling) so this
+                    # path fires every Forza carousel; spamming the noisy
+                    # alert reads like the whole post died, which it didn't.
+                    log.warning(
+                        f"[{BRANDS[brand]['name']}] IG carousel skipped — "
+                        f"slide {failed_slide} upload failed after 3 retries: {err_detail[:300]}"
                     )
+                    results["instagram"] = {"error": f"Slide {failed_slide} upload failed after 3 retries (FB/LI continue): {err_detail}"}
                 elif len(container_ids) == len(images):
                     results["instagram"] = await publish_ig_carousel(ig_account_id, container_ids, ig_caption)
                 else:
-                    results["instagram"] = {"error": f"Only {len(container_ids)}/{len(images)} slides uploaded — carousel aborted"}
+                    results["instagram"] = {"error": f"Only {len(container_ids)}/{len(images)} slides uploaded (FB/LI continue)"}
             else:
                 results["instagram"] = await publish_ig_single(ig_account_id, images[0], ig_caption)
         else:

@@ -376,6 +376,59 @@ Return ONLY the JSON structure described in your instructions."""
 
             content = json.loads(raw[start:end])
             content["brand"] = brand  # ensure brand is set
+
+            # 4-slide validator. Claude occasionally returns 3 slides; the
+            # carousel renderer + post pipeline assume exactly 4 (cover, data,
+            # insight, cta). Retry once with an explicit count correction
+            # before failing — silent 3-slide carousels look broken in feed.
+            slides = content.get("slides", [])
+            if len(slides) != 4:
+                log.warning(f"[search_and_generate] {brand} returned {len(slides)} slides — retrying once for exactly 4")
+                retry_body = {
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 4096,
+                    "system": CONTENT_SYSTEM_PROMPT,
+                    "messages": [
+                        {"role": "user", "content": search_prompt},
+                        {"role": "assistant", "content": raw},
+                        {"role": "user", "content": (
+                            f"You returned {len(slides)} slides. The carousel MUST have exactly 4 slides "
+                            "(cover, data, insight, cta) — no more, no fewer. Re-output the full JSON "
+                            "with all 4 slides."
+                        )},
+                    ],
+                }
+                if use_web_search:
+                    retry_body["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
+                retry_resp = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": CLAUDE_API_KEY,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json=retry_body,
+                )
+                if retry_resp.status_code == 200:
+                    retry_blocks = [
+                        b.get("text", "")
+                        for b in retry_resp.json().get("content", [])
+                        if b.get("type") == "text" and b.get("text", "").strip()
+                    ]
+                    retry_raw = "\n".join(retry_blocks).strip()
+                    rs, re_ = retry_raw.find("{"), retry_raw.rfind("}") + 1
+                    if rs >= 0 and re_ > rs:
+                        try:
+                            retried = json.loads(retry_raw[rs:re_])
+                            if len(retried.get("slides", [])) == 4:
+                                retried["brand"] = brand
+                                log.info(f"Content regenerated for {brand} with correct 4 slides")
+                                return retried
+                        except json.JSONDecodeError:
+                            pass
+                log.error(f"[search_and_generate] {brand} still wrong slide count after retry — failing")
+                return {"error": f"slide count {len(slides)} (expected 4) after retry"}
+
             log.info(f"Content generated for {brand}: {content.get('topic_summary', '?')}")
             return content
 
