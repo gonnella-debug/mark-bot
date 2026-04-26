@@ -3395,12 +3395,18 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
     # cover never goes live. If the renderer produced NO images at all, or
     # the cover image (slot 0) is empty/zero-bytes, abort before showing any
     # POST buttons. GG never has to look at approve-on-ghost-content.
-    slide_1_ok = bool(rendered_images) and bool(rendered_images[0]) and len(rendered_images[0]) > 1024
+    sizes = [len(b) if b else 0 for b in (rendered_images or [])]
+    slide_types_dbg = [str(s.get("type") or "?") for s in (content.get("slides") or [])]
+    log.info(f"[render guard] brand={brand} ct={content_type} types={slide_types_dbg} sizes={sizes}")
+    expected = 1 if content_type in ("static", "story") else len(content.get("slides") or [])
+    slide_1_ok = bool(rendered_images) and bool(rendered_images[0]) and len(rendered_images[0]) > 1024 and len(rendered_images) == expected
     if not slide_1_ok:
-        why = "no slides rendered" if not rendered_images else (
-            "cover slide (slide 1) is empty or too small — abort" if not rendered_images[0] or len(rendered_images[0]) <= 1024
-            else "unknown render state"
-        )
+        if not rendered_images:
+            why = "no slides rendered"
+        elif len(rendered_images) != expected:
+            why = f"got {len(rendered_images)} slides, expected {expected} (types={slide_types_dbg})"
+        else:
+            why = f"cover slide (slide 1) is empty or too small (bytes={sizes[0]})"
         await send_telegram(
             f"⚠️ Render failed for *{BRANDS[brand]['name']}* ({content_type}) — {why}. "
             f"Not showing POST buttons — no post goes out without a working slide 1."

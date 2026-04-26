@@ -1198,8 +1198,13 @@ async def render_carousel(slides_content: list[dict], brand: str,
         def _coerce(slide: dict, i: int, total: int) -> dict:
             """Map the older {headline, subtext, stats|points, cta_line} schema into the renderer's expected fields."""
             s = dict(slide)
-            # Infer type if missing
-            if "type" not in s:
+            # Normalize type to lowercase. Claude has been seen to return
+            # "Cover", "Title", "Intro" etc. — without normalising, the renderer
+            # would silently `continue` past slide 0 and produce a 3-slide
+            # carousel with no cover, which is exactly the "no slide 1" bug.
+            raw_type = (s.get("type") or "").strip().lower()
+            valid = {"cover", "data", "insight", "photo_data", "cta"}
+            if raw_type not in valid:
                 if i == 0:
                     s["type"] = "cover"
                 elif i == total - 1 and (s.get("cta_line") or s.get("cta_text") or "CTA" in str(s.get("headline", "")).upper()):
@@ -1208,6 +1213,16 @@ async def render_carousel(slides_content: list[dict], brand: str,
                     s["type"] = "data"
                 else:
                     s["type"] = "insight"
+                if raw_type:
+                    log.warning(f"[render] slide {i} unrecognised type '{slide.get('type')}' → coerced to '{s['type']}'")
+            else:
+                s["type"] = raw_type
+            # Slide 0 is always a cover. If Claude returned 4 slides but the
+            # first one is "data" or "insight", the carousel still has no
+            # cover. Force it.
+            if i == 0 and s["type"] != "cover":
+                log.warning(f"[render] slide 0 was '{s['type']}' — forcing 'cover' so the carousel has a slide 1")
+                s["type"] = "cover"
             # Fill missing fields from the old schema
             headline = s.get("headline", "")
             subtext = s.get("subtext", "")
@@ -1295,6 +1310,10 @@ async def render_carousel(slides_content: list[dict], brand: str,
                         logo_path, accent
                     )
             else:
+                # Should be unreachable now that _coerce normalises every type,
+                # but if a new slide_type ever lands in JSON we want the noise.
+                log.error(f"[render] slide {i} unhandled type '{slide_type}' — appending blank placeholder so caller sees the gap")
+                images.append(b"")
                 continue
 
             # Write to temp file so file:// URLs work for images
@@ -1302,12 +1321,19 @@ async def render_carousel(slides_content: list[dict], brand: str,
                 f.write(html)
                 tmp_path = f.name
 
-            await page.goto(f"file://{tmp_path}", wait_until="networkidle")
-            await page.wait_for_timeout(400)
+            try:
+                # networkidle can hang for ~30s if Google Fonts is slow on
+                # Railway egress — fall back to domcontentloaded so we still
+                # get a screenshot rather than a Playwright timeout.
+                await page.goto(f"file://{tmp_path}", wait_until="networkidle", timeout=15000)
+            except Exception as e:
+                log.warning(f"[render] slide {i+1} networkidle timed out ({e}); falling back to domcontentloaded")
+                await page.goto(f"file://{tmp_path}", wait_until="domcontentloaded", timeout=15000)
+            await page.wait_for_timeout(800 if slide_type == "cover" else 400)
             img_bytes = await page.screenshot(type="png")
             images.append(img_bytes)
             os.unlink(tmp_path)
-            log.info(f"Rendered slide {i+1}/{len(slides_content)} ({slide_type})")
+            log.info(f"[render] slide {i+1}/{len(slides_content)} type={slide_type} bytes={len(img_bytes)}")
 
         await browser.close()
 

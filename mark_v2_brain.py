@@ -259,12 +259,23 @@ async def generate_and_render(brand: str, topic: str, content_type: str = "carou
     # eventual POST NOW path choked. Unpack correctly.
     images, _visuals = await render_carousel(slides, brand)
 
-    # Slide-1-is-non-negotiable guard (GG rule 2026-04-24). Same bar as the
-    # _run_single preview path in mark_bot_final.py — no buttons, no post,
-    # if slide 1 is missing, empty, or under 1 KB.
-    slide_1_ok = bool(images) and bool(images[0]) and len(images[0]) > 1024
+    # Slide-1-is-non-negotiable guard (GG rule 2026-04-24). Includes a
+    # structural check: if Claude returned 4 slides but the first is not a
+    # cover, the previous renderer would silently drop it and the carousel
+    # would arrive with no slide 1. _coerce now forces slide 0 to "cover",
+    # but we still verify here and surface real diagnostics.
+    slide_types = [str(s.get("type") or "?") for s in slides]
+    sizes = [len(b) if b else 0 for b in (images or [])]
+    log.info(f"[render guard] brand={brand} ct={content_type} types={slide_types} sizes={sizes}")
+    expected = 1 if content_type == "static" else len(slides)
+    slide_1_ok = bool(images) and bool(images[0]) and len(images[0]) > 1024 and len(images) == expected
     if not slide_1_ok:
-        why = "no slides rendered" if not images else "cover slide (slide 1) is empty or too small"
+        if not images:
+            why = "no slides rendered"
+        elif len(images) != expected:
+            why = f"got {len(images)} slides, expected {expected} (types={slide_types})"
+        else:
+            why = f"cover slide (slide 1) is empty or too small (bytes={sizes[0]})"
         await send_tg(
             f"⚠️ Render failed for *{brand_display.get(brand, brand)}* ({content_type}) — {why}. "
             f"Not showing POST buttons — no post goes out without a working slide 1."
