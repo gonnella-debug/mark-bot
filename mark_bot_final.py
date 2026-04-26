@@ -1651,6 +1651,32 @@ async def render_carousel_images(content: dict, brand: str) -> tuple[list[bytes]
     slides = content.get("slides", [])
     if not slides:
         return [], {"backgrounds": [], "forza_cover_variant": None}
+    # Slide-0-must-be-clean-cover normalisation. Mirrors mark_v2_brain so the
+    # autonomous post path gets the same protection: if Claude shipped a data
+    # slide as slide 0 (or a cover with bullets attached), strip data fields
+    # and lift a usable headline. The renderer's _coerce forces type=cover but
+    # generate_cover_slide doesn't render bullets — so we have to remove them
+    # here, otherwise slide 1 ends up empty.
+    raw_types = [(s.get("type") or "?").strip().lower() for s in slides]
+    log.info(f"[render_carousel_images] {brand} pre-render types={raw_types}")
+    s0 = slides[0]
+    s0_has_bullets = bool(s0.get("bullets") or s0.get("stats") or s0.get("points"))
+    if (s0.get("type") or "").strip().lower() != "cover" or s0_has_bullets:
+        log.warning(
+            f"[render_carousel_images] {brand} slide 0 needs cover normalisation — "
+            f"type={s0.get('type')!r}, had_bullets={s0_has_bullets}"
+        )
+        lifted_top = (s0.get("headline_top") or s0.get("subtext") or "").strip()
+        lifted_gold = (s0.get("headline_gold") or s0.get("headline") or s0.get("headline_white") or "").strip()
+        lifted_bottom = (s0.get("headline_bottom") or s0.get("headline_white") or "").strip()
+        if lifted_gold and lifted_gold == lifted_bottom:
+            lifted_bottom = ""
+        slides = [{
+            "type": "cover",
+            "headline_top": lifted_top,
+            "headline_gold": lifted_gold,
+            "headline_bottom": lifted_bottom,
+        }] + list(slides[1:])
     recent = _recent_visuals_for_brand(brand, days=7)
     last_exc: Exception | None = None
     for attempt in range(3):

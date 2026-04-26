@@ -524,6 +524,80 @@ Return ONLY the JSON structure described in your instructions."""
                 log.error(f"[search_and_generate] {brand} still wrong slide count after retry — failing")
                 return {"error": f"slide count {len(slides)} (expected 4) after retry"}
 
+            # Slide 0 MUST be type "cover" with cover-specific fields. Claude has
+            # been observed returning 4 valid slides where slide[0] is a data
+            # slide — the renderer's _coerce force-cover then produces an empty
+            # cover (no headline_top/bottom). Reject and retry once with an
+            # explicit correction so we get real cover copy, not a degraded
+            # data-slide-rebadged-as-cover.
+            s0 = slides[0] if slides else {}
+            s0_type = (s0.get("type") or "").strip().lower()
+            cover_ok = (
+                s0_type == "cover"
+                and bool(s0.get("headline_gold"))
+                and not s0.get("bullets")
+                and not s0.get("stats")
+                and not s0.get("points")
+            )
+            if not cover_ok:
+                log.warning(
+                    f"[search_and_generate] {brand} slide 0 not a clean cover "
+                    f"(type={s0_type!r}, has_bullets={bool(s0.get('bullets') or s0.get('stats') or s0.get('points'))}) — retrying"
+                )
+                fix_body = {
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 4096,
+                    "system": CONTENT_SYSTEM_PROMPT,
+                    "messages": [
+                        {"role": "user", "content": search_prompt},
+                        {"role": "assistant", "content": raw},
+                        {"role": "user", "content": (
+                            f"Slide 0 is wrong. It must be type \"cover\" with EXACTLY these fields: "
+                            f"headline_top (short kicker, ≤4 words), headline_gold (the dramatic hook, "
+                            f"≤6 words), headline_bottom (sub-line, ≤6 words). NO bullets, NO stats, "
+                            f"NO data fields on slide 0 — that belongs on slide 1 (data). Re-output the "
+                            f"full JSON with slide 0 as a proper cover."
+                        )},
+                    ],
+                }
+                if use_web_search:
+                    fix_body["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
+                fix_resp = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": CLAUDE_API_KEY,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json=fix_body,
+                )
+                if fix_resp.status_code == 200:
+                    fix_blocks = [
+                        b.get("text", "")
+                        for b in fix_resp.json().get("content", [])
+                        if b.get("type") == "text" and b.get("text", "").strip()
+                    ]
+                    fix_raw = "\n".join(fix_blocks).strip()
+                    fs, fe = fix_raw.find("{"), fix_raw.rfind("}") + 1
+                    if fs >= 0 and fe > fs:
+                        try:
+                            fixed = json.loads(fix_raw[fs:fe])
+                            fixed_slides = fixed.get("slides", [])
+                            fs0 = fixed_slides[0] if fixed_slides else {}
+                            fs0_type = (fs0.get("type") or "").strip().lower()
+                            if (
+                                len(fixed_slides) == 4
+                                and fs0_type == "cover"
+                                and fs0.get("headline_gold")
+                                and not (fs0.get("bullets") or fs0.get("stats") or fs0.get("points"))
+                            ):
+                                fixed["brand"] = brand
+                                log.info(f"Content slide-0 corrected for {brand}")
+                                return fixed
+                        except json.JSONDecodeError:
+                            pass
+                log.warning(f"[search_and_generate] {brand} slide-0 retry failed — letting renderer coerce")
+
             log.info(f"Content generated for {brand}: {content.get('topic_summary', '?')}")
             return content
 

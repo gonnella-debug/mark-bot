@@ -251,6 +251,34 @@ async def generate_and_render(brand: str, topic: str, content_type: str = "carou
         if not slides:
             slides = content["slides"][:1]
 
+    # Pre-render normalisation: slide 0 must be a clean cover. Claude
+    # occasionally returns slide 0 as type "data"/"insight" with bullets, OR as
+    # type "cover" but with bullets attached. The renderer's _coerce forces
+    # type=cover but generate_cover_slide ignores bullets — so we strip data
+    # fields off slide 0 here and lift a usable headline if no cover fields
+    # exist. Logged so the pre-coerce shape is auditable.
+    raw_types = [(s.get("type") or "?").strip().lower() for s in slides]
+    log.info(f"[v2_brain] pre-render slides for {brand}: types={raw_types}")
+    if slides:
+        s0 = slides[0]
+        s0_had_bullets = bool(s0.get("bullets") or s0.get("stats") or s0.get("points"))
+        if (s0.get("type") or "").strip().lower() != "cover" or s0_had_bullets:
+            log.warning(
+                f"[v2_brain] slide 0 needs cover normalisation — "
+                f"type={s0.get('type')!r}, had_bullets={s0_had_bullets}"
+            )
+            lifted_top = (s0.get("headline_top") or s0.get("subtext") or "").strip()
+            lifted_gold = (s0.get("headline_gold") or s0.get("headline") or s0.get("headline_white") or "").strip()
+            lifted_bottom = (s0.get("headline_bottom") or s0.get("headline_white") or "").strip()
+            if lifted_gold and lifted_gold == lifted_bottom:
+                lifted_bottom = ""
+            slides[0] = {
+                "type": "cover",
+                "headline_top": lifted_top,
+                "headline_gold": lifted_gold,
+                "headline_bottom": lifted_bottom,
+            }
+
     await send_tg(f"_Rendering {len(slides)} slides..._")
     # render_carousel returns a (images, visuals_used) tuple — it is NOT a
     # bare list of bytes. Earlier code assigned the whole tuple to `images`,
