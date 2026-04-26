@@ -55,6 +55,7 @@ from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse, RedirectResponse
 from dotenv import load_dotenv
 from anthropic_limiter import anthropic_post, AnthropicBudgetExceeded  # noqa: E402
+from content_brain import FORZA_LAUNCH_TOPIC_BANK  # single source of truth for Forza topics
 
 load_dotenv()
 
@@ -321,22 +322,10 @@ BRANDS = {
         "font_headline": "Cinzel SemiBold",
         "font_body": "Inter Medium",
         "logo_style": "forza",
-        "topics": [
-            "The four-hour follow-up rule — why it quietly kills deals",
-            "Revenue Infrastructure — the five layers every serious business needs",
-            "Why AI operations beat a growing SDR team on cost and consistency",
-            "What a Systems Audit actually reveals about your business",
-            "From WhatsApp chaos to CRM clarity — a real operator case study",
-            "The hidden cost of founder bandwidth — numbers most operators ignore",
-            "Operating Pictures — why serious founders get briefed twice a day",
-            "Sub-60-second response time — what it changes for your pipeline",
-            "The case for selective intake — why we take fewer clients by design",
-            "Institutional outreach without a BDR team on payroll",
-            "Instant property valuations as a marketplace differentiator",
-            "Brand Infrastructure — daily content without an agency retainer",
-            "Team discipline without micromanagement — how the system runs it",
-            "When growth becomes chaos — the operator's decision matrix",
-        ],
+        # Topics live in content_brain.FORZA_LAUNCH_TOPIC_BANK — one source of
+        # truth. Keeping a parallel list here is how "five layers" survived for
+        # weeks while the real bank had moved on.
+        "topics": list(FORZA_LAUNCH_TOPIC_BANK),
         "posting_weekdays": [1, 3],      # Tue / Thu — B2B cadence, less noisy
         "post_hour_utc": 13,             # 5pm Dubai — late-afternoon decision-maker scroll
     },

@@ -23,42 +23,68 @@ FORZA_LAUNCH_STARTED = "2026-04-19"
 FORZA_LAUNCH_WINDOW_DAYS = 30
 
 FORZA_LAUNCH_TOPIC_BANK = [
-    # ── THE FOUR INFRASTRUCTURES (weeks 1-2 focus) ──
-    "Revenue Infrastructure — what it actually does: 24/7 inbound, sub-60s response, qualification, routing",
+    # ── BOTTLENECK / PAIN-FIRST HOOKS ──
+    "What's your company's actual bottleneck — and why it isn't the one you think",
+    "The 18-hour gap between lead arrival and first reply — what it costs you per month",
+    "Your sales pipeline looks healthy. Your cash flow doesn't. Here's the disconnect",
+    "Lead leakage — where the 60% of enquiries you never closed actually went",
+    "Why qualified leads go cold while your team is in meetings",
+    "Your team isn't lazy — they're drowning in tools that weren't built for how you sell",
+    "Founder-as-bottleneck — what it costs you per month, calculated honestly",
+    "The cost of unread WhatsApp messages — a number most founders never run",
+    "Why your CRM became a graveyard, and what to do instead of nagging the team",
+    "When growth becomes chaos — the operator's decision matrix",
+    # ── BITRIX / OFF-THE-SHELF vs CUSTOM CRM ──
+    "You pay Bitrix for 70 features. Your team uses 6. Here's the maths",
+    "The case against off-the-shelf CRMs — pay for what you actually use, nothing else",
+    "Bitrix vs HubSpot vs Salesforce vs custom — the real cost-per-feature comparison",
+    "Why a 12-field CRM beats a 200-field CRM in every quarter that matters",
+    "Your CRM should fit your sales process. Not the other way around",
+    "Migration from Bitrix to a custom system — the 30-day breakdown",
+    "Off-the-shelf CRM admin tax — the hours your team spends configuring instead of selling",
+    # ── SYSTEM-CHASES-STAFF / ACCOUNTABILITY → REVENUE ──
+    "A system that chases your team for follow-ups, so you don't have to",
+    "How automated accountability adds 20-40% to monthly revenue without a single new hire",
+    "The conversion math — what one extra follow-up per lead is actually worth",
+    "Stop chasing your team. Let the infrastructure do it, and watch revenue compound",
+    "Why follow-up consistency beats lead volume — every time, in every vertical",
+    "The four-hour follow-up rule — why it quietly kills deals you thought were closing",
+    "Real-time accountability without micromanagement — how the system handles it",
+    # ── POSSIBILITY / VISION ──
+    "What a fully wired service business actually looks like, from inbound to billing",
+    "Five things you're doing manually right now that shouldn't be — and what they cost",
+    "If your business ran itself for 30 days, what would break first? That's your priority",
+    "The infrastructure stack that quietly replaces 4 SaaS tools and 2 hires",
+    "Twice-daily operating brief — what your business actually did today, in your inbox",
+    # ── ROI / NUMBERS ──
+    "BDR salary vs autonomous outreach — the spreadsheet most founders never build",
+    "Agency retainer vs in-house brand infrastructure — the 12-month cost difference",
+    "Cost of one missed lead vs the entire Forza Build — run the comparison",
+    "What 'no-show reduction' actually saves a clinic per month — real numbers",
+    "Sub-60-second response time — what it changes for close rates and pipeline velocity",
+    # ── FOUR INFRASTRUCTURES (the offer, framed as solutions to the pain above) ──
+    "Revenue Infrastructure — 24/7 inbound capture, sub-60s response, qualification, routing",
     "Brand Infrastructure — autonomous content production across every platform, no agency retainer",
     "Team Infrastructure — real-time CRM monitoring and accountability without the founder chasing anyone",
     "Founder Intelligence — twice-daily operating pictures: what happened, what's broken, what needs you",
-    # ── SERVICE DEPTH (week 2-3) ──
-    "What a Systems Audit reveals in 30 minutes (the free first step)",
-    "The 30-day Build: week-by-week breakdown from audit to live production",
-    "Build + Operate pricing model — $5k+ Build, $1k+/mo Operate, why both matter",
-    "Selective intake — why we run a small number of engagements per quarter",
+    # ── SERVICE DEPTH ──
+    "What a Systems Audit reveals in 30 minutes — the free first step",
+    "The 30-day Build — week-by-week breakdown from audit to live production",
+    "Build + Operate pricing — why both matter and what each pays for",
     "Direct principal access — no account managers, no handoffs",
-    "Client owns the data — your WABA, your CRM, your Meta pages",
-    # ── INDUSTRY POSITIONING (week 3-4) ──
-    "Forza for brokerages — inbound capture, agent accountability, marketing engine",
-    "Forza for clinics — appointment follow-up, review requests, no-show reduction",
-    "Forza for law firms — intake qualification, matter updates, accountability",
-    "Forza for recruitment — candidate and client dual-channel follow-up at scale",
-    "Forza for institutional wealth — LP outreach, reporting cadence, compliance-aware ops",
-    "Forza for agencies — internal project accountability and client content engine",
-    # ── CORE ARGUMENTS (ongoing) ──
-    "The four-hour follow-up rule — why it quietly kills deals",
-    "Systems over staff — where the maths actually works",
-    "Sub-60-second response time — what it changes for your pipeline",
-    "From WhatsApp chaos to CRM clarity — operator case study arc",
-    "Institutional outreach without a BDR team on payroll",
-    "Daily content without an agency retainer — how the infrastructure does it",
-    "The hidden cost of founder bandwidth — numbers most operators ignore",
-    "When growth becomes chaos — the operator's decision matrix",
-    # ── PROOF POINTS (anonymised — NEVER use client brand names) ──
-    "Dubai Brokerage Platform — the operator's own revenue + team infrastructure stack",
-    "Institutional Investment Platform — ADGM outreach engine without BDRs",
-    "Property Marketplace Platform — instant valuations and lead routing",
-    # ── PHILOSOPHY (ongoing) ──
+    "Client owns the data — your WABA, your CRM, your Meta pages, always",
+    # ── VERTICAL PAIN → SOLUTION ──
+    "Brokerages — why your 50-agent CRM works for 5 of them, and what to fix",
+    "Clinics — the no-show problem, solved with three automated touches",
+    "Law firms — matter updates and intake qualification without paralegal time",
+    "Recruitment — dual-channel candidate and client follow-up at scale",
+    "Institutional wealth — LP outreach and reporting cadence without a BDR team",
+    "Agencies — client status updates that happen without weekly status calls",
+    # ── PHILOSOPHY ──
+    "Systems over staff — where the maths actually works, and where it doesn't",
     "Why we don't call ourselves an AI agency",
-    "Operators, not consultants — the engagement model that follows",
-    "Built to last, not to onboard fast — why our clients don't churn",
+    "Operators, not consultants — the engagement model that follows from that",
+    "Infrastructure that compounds vs tools that depreciate",
 ]
 
 
@@ -221,6 +247,7 @@ OUTPUT FORMAT — return ONLY valid JSON, include ALL FOUR brands:
 
 
 POSTING_LOG_FILE = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "mark_posting_log.json")
+SUGGESTION_LOG_FILE = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "mark_suggestion_log.json")
 
 
 def _load_recent_topics(brand: str, days: int = 7) -> list[str]:
@@ -251,6 +278,71 @@ def _load_recent_topics(brand: str, days: int = 7) -> list[str]:
         return []
 
 
+def _load_recent_suggested_topics(brand: str, days: int = 7) -> list[str]:
+    """Read the suggestion log and return topics SUGGESTED for `brand` in last `days`.
+    Suggested-but-not-posted still counts — otherwise Mark re-suggests the same
+    topic every morning until GG approves it, which is the bug."""
+    try:
+        if not os.path.exists(SUGGESTION_LOG_FILE):
+            return []
+        with open(SUGGESTION_LOG_FILE, "r") as f:
+            entries = json.load(f)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        recent = []
+        for entry in entries:
+            if entry.get("brand") != brand:
+                continue
+            ts = entry.get("timestamp", "")
+            try:
+                entry_dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                continue
+            if entry_dt >= cutoff:
+                topic = (entry.get("topic") or "").strip()
+                if topic:
+                    recent.append(topic)
+        return recent
+    except Exception as e:
+        log.warning(f"Could not load recent suggestions for {brand}: {e}")
+        return []
+
+
+def _log_suggestion(brand: str, topic: str) -> None:
+    """Append a suggestion entry. Bounded to last 500 entries to keep the file small."""
+    try:
+        os.makedirs(os.path.dirname(SUGGESTION_LOG_FILE), exist_ok=True)
+        entries = []
+        if os.path.exists(SUGGESTION_LOG_FILE):
+            try:
+                with open(SUGGESTION_LOG_FILE, "r") as f:
+                    entries = json.load(f)
+            except (json.JSONDecodeError, ValueError):
+                entries = []
+        entries.append({
+            "brand": brand,
+            "topic": topic,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        entries = entries[-500:]
+        with open(SUGGESTION_LOG_FILE, "w") as f:
+            json.dump(entries, f)
+    except Exception as e:
+        log.warning(f"Could not log suggestion for {brand}: {e}")
+
+
+def _pick_forza_topic() -> str:
+    """Programmatically pick the next Forza topic. Excludes anything posted OR
+    suggested in the last 7 days. Falls back to the full bank only if every
+    topic has been touched in that window. No LLM in the selection path —
+    Claude only writes the angle."""
+    excluded = set(_load_recent_topics("forza", days=7)) | set(_load_recent_suggested_topics("forza", days=7))
+    available = [t for t in FORZA_LAUNCH_TOPIC_BANK if t not in excluded]
+    if not available:
+        available = list(FORZA_LAUNCH_TOPIC_BANK)
+    import random as _r
+    return _r.choice(available)
+
+
 async def search_and_generate(brand: str, specific_topic: str = None) -> dict:
     """
     Search real news, analyze market conditions, generate carousel content.
@@ -277,7 +369,10 @@ If you can only find a similar angle, find a NEW data point, NEW comparison, or 
     forza_launch = (brand == "forza" and is_forza_launch_mode())
 
     if forza_launch:
-        available_topics = [t for t in FORZA_LAUNCH_TOPIC_BANK if t not in recent_topics]
+        # Exclude both posted and previously-suggested topics so we never
+        # carousel a topic GG already saw and rejected this week.
+        excluded = set(recent_topics) | set(_load_recent_suggested_topics(brand, days=7))
+        available_topics = [t for t in FORZA_LAUNCH_TOPIC_BANK if t not in excluded]
         if not available_topics:
             available_topics = FORZA_LAUNCH_TOPIC_BANK  # fall back if we've somehow cycled through
         topic_bank_block = "\n".join(f"  - {t}" for t in available_topics)
@@ -448,17 +543,20 @@ async def get_morning_suggestions() -> dict:
     today = datetime.now(timezone(timedelta(hours=4))).strftime("%A %d %B %Y")
 
     forza_launch = is_forza_launch_mode()
-    forza_recent = _load_recent_topics("forza", days=7)
-    forza_available = [t for t in FORZA_LAUNCH_TOPIC_BANK if t not in forza_recent]
-    if not forza_available:
-        forza_available = FORZA_LAUNCH_TOPIC_BANK
-    forza_bank_block = "\n".join(f"  - {t}" for t in forza_available[:20])
+    # Programmatic pick — Claude no longer chooses the Forza topic. Excludes
+    # anything posted OR suggested in the last 7 days, so a rejected suggestion
+    # does not come back tomorrow. Claude only writes the angle around this
+    # locked topic.
+    forza_locked_topic = _pick_forza_topic() if forza_launch else None
 
     forza_instruction = (
-        f"""For Forza (LAUNCH MODE — first 30 days from {FORZA_LAUNCH_STARTED}): Do NOT search news. Do NOT react to current events. Forza is a brand-new venture — every post must PROMOTE A SERVICE or argue for an operating philosophy. Pick ONE unposted topic from the Forza topic bank below and explain WHY it's the right service-focused post to push today (e.g. week 1 = the four infrastructures, week 2 = process + pricing, week 3 = vertical fit, week 4 = philosophy and proof points).
+        f"""For Forza (LAUNCH MODE — first 30 days from {FORZA_LAUNCH_STARTED}): Do NOT search news. Do NOT react to current events. Forza is a brand-new venture — every post must PROMOTE A SERVICE, surface a real operator pain point, or argue for an operating philosophy.
 
-FORZA TOPIC BANK (pick one not in last 7 days' posts):
-{forza_bank_block}
+THE FORZA TOPIC FOR TODAY IS LOCKED. You do not pick it. You write the angle for this exact topic:
+
+  TOPIC: {forza_locked_topic}
+
+Return this string verbatim in the "topic" field of the forza suggestion. In the "angle" field, write 2-3 sentences explaining WHY this is the right post to push today, what specific pain point or business reality it speaks to, and the concrete hook the carousel will lead with. Frame Forza posts around obvious company bottlenecks (slow follow-up, CRM bloat, founder-as-bottleneck, leads going cold, paying for unused SaaS features) and how the Forza infrastructure removes them. Show endless possibility — what a fully wired business actually looks like, with numbers where they help.
 """
         if forza_launch
         else
@@ -515,7 +613,26 @@ OUTPUT ALL FOUR BRANDS. Do not skip Forza."""
             start = raw.find("{")
             end = raw.rfind("}") + 1
             if start >= 0 and end > start:
-                return json.loads(raw[start:end])
+                parsed = json.loads(raw[start:end])
+
+                # Enforce the locked Forza topic — if Claude paraphrased or
+                # invented (e.g. "Revenue Infrastructure — five layers"), we
+                # overwrite with the topic we actually picked. Then log every
+                # suggestion so tomorrow's pick excludes it.
+                for s in parsed.get("suggestions", []) or []:
+                    brand = s.get("brand", "")
+                    if brand == "forza" and forza_locked_topic:
+                        if (s.get("topic") or "").strip() != forza_locked_topic:
+                            log.info(
+                                f"[morning_suggestions] forza topic override — Claude returned "
+                                f"'{s.get('topic')}', forcing locked topic '{forza_locked_topic}'"
+                            )
+                            s["topic"] = forza_locked_topic
+                    topic = (s.get("topic") or "").strip()
+                    if brand and topic:
+                        _log_suggestion(brand, topic)
+
+                return parsed
 
             return {"error": "No JSON in response"}
 
