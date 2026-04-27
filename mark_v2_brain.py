@@ -404,24 +404,6 @@ async def scheduled_post_checker():
         await asyncio.sleep(60)
 
 
-# ── DAILY SCHEDULER ──
-
-async def daily_morning_scheduler():
-    """Runs at 10am Dubai daily — triggers morning suggestions."""
-    while True:
-        try:
-            now = datetime.now(DUBAI_TZ)
-            today_str = now.strftime("%Y-%m-%d")
-
-            if now.hour == 10 and _suggestion_sent_today != today_str:
-                log.info("10am Dubai — sending morning suggestions")
-                await send_morning_suggestions()
-
-        except Exception as e:
-            log.error(f"Morning scheduler error: {e}")
-        await asyncio.sleep(60)
-
-
 # ── CALLBACK HANDLER ──
 
 async def handle_callback_v2(data: str, cb_id: str):
@@ -542,8 +524,7 @@ async def mark_v2_listener():
     else:
         log.info("mark_v2 boot within 10 min of previous boot — skipping startup Telegram")
 
-    # Start background tasks
-    asyncio.create_task(daily_morning_scheduler())
+    # Start background tasks (suggestions are GG-button-triggered only)
     asyncio.create_task(scheduled_post_checker())
 
     while True:
@@ -636,7 +617,7 @@ async def mark_v2_listener():
                         "• `suggest` — get today's topic suggestions\n"
                         "• `generate holdings [topic]` — create content for a brand\n"
                         "• `status` — what's been posted today\n\n"
-                        "_I also auto-suggest topics at 10am Dubai_"
+                        "_Suggestions only fire when you tap a brand button or type `suggest`._"
                     )
 
                 # Chat
