@@ -3415,15 +3415,48 @@ async def api_status():
 
 
 @app.get("/posting_log")
-async def api_posting_log():
-    """Return today's posting log so Alex can query what was actually published."""
+async def api_posting_log(days: int = 0, per_brand: int = 0):
+    """Return Mark's posting log. Default: today's posts (back-compat). With
+    `?days=N`, returns posts from the last N days. With `?per_brand=K`, also
+    returns the K most-recent posts per brand under `recent_by_brand` so
+    Alex's dashboard can surface a 'last K posts per brand' panel without
+    re-grouping client-side."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     today_posts = [p for p in posting_log if p["timestamp"].startswith(today)]
-    return {
+
+    out: dict = {
         "date": today,
         "total_posts": len(today_posts),
         "posts": today_posts,
     }
+
+    if days > 0:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        recent = [p for p in posting_log if p.get("timestamp", "") >= cutoff]
+        recent.sort(key=lambda p: p.get("timestamp", ""), reverse=True)
+        out["window_days"] = days
+        out["window_posts"] = recent
+
+    if per_brand > 0:
+        cutoff_for_grouping = (datetime.now(timezone.utc) - timedelta(days=max(days, 7))).isoformat()
+        by_brand: dict[str, list[dict]] = {}
+        scoped = [p for p in posting_log if p.get("timestamp", "") >= cutoff_for_grouping]
+        scoped.sort(key=lambda p: p.get("timestamp", ""), reverse=True)
+        for p in scoped:
+            b = p.get("brand", "unknown")
+            by_brand.setdefault(b, [])
+            if len(by_brand[b]) < per_brand:
+                by_brand[b].append({
+                    "topic": p.get("topic", ""),
+                    "content_type": p.get("content_type", ""),
+                    "timestamp": p.get("timestamp", ""),
+                    "platforms_ok": p.get("platforms_ok", 0),
+                    "platforms_total": p.get("platforms_total", 0),
+                    "visuals_used": p.get("visuals_used") or {},
+                })
+        out["recent_by_brand"] = by_brand
+
+    return out
 
 
 @app.post("/pdf_post")
