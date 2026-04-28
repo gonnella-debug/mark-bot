@@ -117,6 +117,16 @@ def _li_scope_for(account: str) -> str:
         return "w_organization_social"  # CMA-only app: nothing else is allowed
     return LI_SCOPE
 
+
+def _li_has_org_scope(account: str) -> bool:
+    """Whether the stored token for `account` was issued with
+    w_organization_social. Posts authored as a Company Page require this
+    scope; using a member-only token returns HTTP 400 'Organization
+    permissions must be used when using organization as author'."""
+    tok = LI_TOKENS.get(account) or {}
+    scope = (tok.get("scope") or "").lower()
+    return "w_organization_social" in scope
+
 def _load_li_tokens() -> dict:
     """Load per-account LinkedIn tokens from persistent volume, fall back to env vars."""
     try:
@@ -2608,7 +2618,20 @@ async def post_content(content: dict, brand: str) -> dict:
         use_carousel = (ct == "carousel" and len(images) >= 2)
         admin_account = cfg.get("li_admin_account", "gg")  # Forza uses "gg_forza"; others default to "gg"
         if li_page_id:
-            if use_carousel:
+            # Company-page posts require the admin token to carry
+            # w_organization_social. If it doesn't, the API returns HTTP 400
+            # "Organization permissions must be used when using organization
+            # as author" — pure noise, since the personal cross-posts below
+            # still publish. Skip cleanly with an info log; GG re-auths
+            # with the right scope when he wants the company feed enabled.
+            if not _li_has_org_scope(admin_account):
+                msg = (
+                    f"skipped (admin '{admin_account}' token lacks w_organization_social — "
+                    f"re-auth at /linkedin/auth?account={admin_account} after adding the scope to enable)"
+                )
+                log.info(f"LI company-page skipped for {brand}: {msg}")
+                li_results["company"] = {"skipped": msg}
+            elif use_carousel:
                 li_results["company"] = await publish_linkedin_carousel(li_page_id, images, cap_li, li_title, admin_account=admin_account)
             else:
                 li_results["company"] = await publish_linkedin(li_page_id, images[0], cap_li, admin_account=admin_account)
