@@ -3555,9 +3555,11 @@ async def admin_backfill_post_thumbs(request: Request):
             except (ValueError, TypeError):
                 stats["no_drive_match"] += 1
                 continue
-            ts_key = dt.strftime("%Y-%m-%d_%H%M")
-            ts_key_prev = (dt - timedelta(minutes=1)).strftime("%Y-%m-%d_%H%M")
-            ts_key_next = (dt + timedelta(minutes=1)).strftime("%Y-%m-%d_%H%M")
+            # ±5min window — Drive uploads happen a few seconds after the
+            # posting_log entry timestamp, but posting_log timestamp can be
+            # several minutes after the render started in slow Playwright
+            # restarts. Widen than ±1min misses real matches.
+            ts_keys = {(dt + timedelta(minutes=m)).strftime("%Y-%m-%d_%H%M") for m in range(-5, 6)}
 
             if folder_id not in folder_listings:
                 files: list[dict] = []
@@ -3588,7 +3590,7 @@ async def admin_backfill_post_thumbs(request: Request):
                 folder_listings[folder_id] = files
 
             match = next(
-                (f for f in folder_listings[folder_id] if any(k in f["name"] for k in (ts_key, ts_key_prev, ts_key_next))),
+                (f for f in folder_listings[folder_id] if any(k in f["name"] for k in ts_keys)),
                 None,
             )
             if not match:
