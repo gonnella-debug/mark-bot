@@ -3814,4 +3814,99 @@ async def startup():
     asyncio.create_task(linkedin_token_monitor())
     asyncio.create_task(linkedin_health_check())
     asyncio.create_task(_temp_images_sweeper())
+    asyncio.create_task(forza_clients_drive_sync())
     log.info("Mark v2 — Autonomous Marketing Brain — online")
+
+
+# ── FORZA CLIENTS DRIVE SYNC ──────────────────────────────────────────────────
+
+FORZA_SCRAPER_URL = os.getenv("FORZA_SCRAPER_URL", "")
+FORZA_SCRAPER_TOKEN = os.getenv("FORZA_SCRAPER_TOKEN", "")
+FORZA_CLIENTS_DRIVE_FILE_ID = os.getenv("FORZA_CLIENTS_DRIVE_FILE_ID", "")
+
+
+async def _forza_clients_pull_and_upload() -> None:
+    """Fetch the cumulative prospects CSV from forza-scraper, upload it to
+    GG's Drive file (overwriting prior content). The scraper appends 24/7,
+    so each daily upload contains every previously-scraped row plus today's
+    new entries — that's how GG's "add new clients daily" requirement is
+    satisfied without merging row-by-row. Quiet on missing env so the job
+    no-ops cleanly if any one of the three vars is unset."""
+    if not (FORZA_SCRAPER_URL and FORZA_SCRAPER_TOKEN and FORZA_CLIENTS_DRIVE_FILE_ID):
+        log.info("forza_clients_drive_sync: skipping — env vars not all set")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.get(
+                FORZA_SCRAPER_URL.rstrip("/") + "/prospects.csv",
+                headers={"Authorization": f"Bearer {FORZA_SCRAPER_TOKEN}"},
+            )
+        if r.status_code != 200:
+            log.warning(f"forza_clients_drive_sync: scraper returned HTTP {r.status_code}")
+            return
+        csv_bytes = r.content
+        if len(csv_bytes) < 1024:
+            log.warning(f"forza_clients_drive_sync: payload suspiciously small ({len(csv_bytes)}b) — skipping upload")
+            return
+    except Exception as e:
+        log.error(f"forza_clients_drive_sync: scraper fetch failed: {e}")
+        return
+
+    # Multipart media update against Drive's files endpoint. Uses Mark's
+    # OAuth refresh token (user-delegated) per the SA Drive Quota rule.
+    token = await _get_drive_upload_token()
+    if not token:
+        log.warning("forza_clients_drive_sync: no Drive upload token — skipping")
+        return
+
+    boundary = "forza_clients_boundary_" + str(int(time.time()))
+    metadata = json.dumps({"name": "forza_clients.csv", "mimeType": "text/csv"})
+    body = (
+        f"--{boundary}\r\n"
+        f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+        f"{metadata}\r\n"
+        f"--{boundary}\r\n"
+        f"Content-Type: text/csv\r\n\r\n"
+    ).encode("utf-8") + csv_bytes + f"\r\n--{boundary}--".encode("utf-8")
+
+    url = (
+        f"https://www.googleapis.com/upload/drive/v3/files/"
+        f"{FORZA_CLIENTS_DRIVE_FILE_ID}?uploadType=multipart"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            r = await client.patch(
+                url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": f"multipart/related; boundary={boundary}",
+                },
+                content=body,
+            )
+        if 200 <= r.status_code < 300:
+            log.info(f"forza_clients_drive_sync: uploaded {len(csv_bytes)} bytes to Drive file {FORZA_CLIENTS_DRIVE_FILE_ID[:8]}…")
+        else:
+            log.error(f"forza_clients_drive_sync: Drive PATCH HTTP {r.status_code}: {r.text[:300]}")
+    except Exception as e:
+        log.error(f"forza_clients_drive_sync: Drive upload failed: {e}")
+
+
+async def forza_clients_drive_sync() -> None:
+    """Daily 18:00 Dubai sync of the Forza prospects CSV to GG's Drive file.
+    Fires once on boot (so deploys repopulate the file immediately), then
+    sleeps until the next 18:00 and loops."""
+    await asyncio.sleep(30)  # let the app settle so envs/services are warm
+    await _forza_clients_pull_and_upload()
+    while True:
+        try:
+            now = datetime.now(timezone(timedelta(hours=4)))
+            target = now.replace(hour=18, minute=0, second=0, microsecond=0)
+            if now >= target:
+                target = target + timedelta(days=1)
+            wait_s = (target - now).total_seconds()
+            log.info(f"forza_clients_drive_sync: next run at {target.strftime('%a %H:%M %Z')} ({wait_s/3600:.1f}h)")
+            await asyncio.sleep(wait_s)
+            await _forza_clients_pull_and_upload()
+        except Exception as e:
+            log.error(f"forza_clients_drive_sync loop error: {e}")
+            await asyncio.sleep(3600)
