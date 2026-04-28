@@ -2479,6 +2479,17 @@ async def _build_post_summary(brand: str, results: dict, cfg: dict) -> str:
 
 async def post_content(content: dict, brand: str) -> dict:
     """Render images and post to all configured platforms for this brand."""
+    # Defensive: scrub Claude web-search artifacts (<cite index="...">,
+    # trailing footnote numerals, zero-width spaces) one more time at post
+    # time. content_brain already strips at parse time, but cached content
+    # from older runs may predate that fix. 2026-04-28 incident: a Holdings
+    # post went live with raw <cite> tags in the IG caption.
+    try:
+        from content_brain import _clean_content_dict as _scrub
+        _scrub(content)
+    except Exception as e:
+        log.warning(f"post-time content scrub failed: {e}")
+
     cfg = BRANDS[brand]
     results = {}
     ct = content.get("content_type", content.get("_content_type", "carousel"))

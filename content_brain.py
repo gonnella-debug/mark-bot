@@ -99,6 +99,51 @@ def is_forza_launch_mode() -> bool:
     return 0 <= elapsed <= FORZA_LAUNCH_WINDOW_DAYS
 
 
+# ── CLAUDE ARTIFACT STRIPPER ──────────────────────────────────────────────────
+# When Claude responds with web_search enabled, the JSON content fields
+# sometimes contain literal `<cite index="...">…</cite>` markers, footnote
+# numerals like `[1]`, and the occasional `&nbsp;` / zero-width-space. None of
+# that should ever land in a published Instagram caption or LinkedIn post.
+# 2026-04-28: GG caught a Nucassa Holdings post that went live with raw
+# `<cite index="11-2,11-3">` tags — patient capital looking unprofessional.
+# We sanitise at parse time AND defensively at post time so cached content
+# from older runs also gets cleaned.
+import re as _re
+_CITE_TAG = _re.compile(r"<\s*/?\s*cite\b[^>]*>", _re.IGNORECASE)
+_TRAILING_FOOTNOTES = _re.compile(r"\s*\[\d+(?:[,\s\d]*)\]")
+_ZW = _re.compile(r"[​-‍﻿]")
+
+def _strip_claude_artifacts(text):
+    """Remove Claude web-search citation markers + footnote numerals + zero-
+    width junk from a single string. Returns the cleaned string (or the
+    original value untouched if it isn't a string)."""
+    if not isinstance(text, str):
+        return text
+    s = _CITE_TAG.sub("", text)
+    s = _TRAILING_FOOTNOTES.sub("", s)
+    s = _ZW.sub("", s)
+    s = _re.sub(r"[ \t]+", " ", s)
+    s = _re.sub(r"\n{3,}", "\n\n", s).strip()
+    return s
+
+
+def _clean_content_dict(content):
+    """Recursively strip Claude artifacts from every string in a content
+    dict (caption fields, slide copy, hashtags, topic_summary). Mutates and
+    returns the same dict for chaining. Safe to call on partially-parsed
+    or non-dict inputs (returns input unchanged)."""
+    if isinstance(content, dict):
+        for k, v in list(content.items()):
+            if isinstance(v, str):
+                content[k] = _strip_claude_artifacts(v)
+            elif isinstance(v, list):
+                content[k] = [_clean_content_dict(x) if isinstance(x, dict) else _strip_claude_artifacts(x) for x in v]
+            elif isinstance(v, dict):
+                content[k] = _clean_content_dict(v)
+        return content
+    return content
+
+
 BRAND_CONTEXT = {
     "nucassa_re": {
         "name": "Nucassa Real Estate",
@@ -536,7 +581,7 @@ Return ONLY the JSON structure described in your instructions."""
                             if len(retried.get("slides", [])) == 4:
                                 retried["brand"] = brand
                                 log.info(f"Content regenerated for {brand} with correct 4 slides")
-                                return retried
+                                return _clean_content_dict(retried)
                         except json.JSONDecodeError:
                             pass
                 log.error(f"[search_and_generate] {brand} still wrong slide count after retry — failing")
@@ -611,13 +656,13 @@ Return ONLY the JSON structure described in your instructions."""
                             ):
                                 fixed["brand"] = brand
                                 log.info(f"Content slide-0 corrected for {brand}")
-                                return fixed
+                                return _clean_content_dict(fixed)
                         except json.JSONDecodeError:
                             pass
                 log.warning(f"[search_and_generate] {brand} slide-0 retry failed — letting renderer coerce")
 
             log.info(f"Content generated for {brand}: {content.get('topic_summary', '?')}")
-            return content
+            return _clean_content_dict(content)
 
     except json.JSONDecodeError as e:
         log.error(f"JSON parse error: {e}")
@@ -735,7 +780,7 @@ OUTPUT ALL FOUR BRANDS. Do not skip Forza."""
                     if brand and topic:
                         _log_suggestion(brand, topic)
 
-                return parsed
+                return _clean_content_dict(parsed)
 
             return {"error": "No JSON in response"}
 
