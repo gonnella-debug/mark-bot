@@ -83,6 +83,12 @@ TELEGRAM_CHAT_ID    = os.getenv("TELEGRAM_CHAT_ID")
 META_APP_ID         = os.getenv("META_APP_ID", "")
 META_APP_SECRET     = os.getenv("META_APP_SECRET", "")
 META_SYSTEM_TOKEN   = os.getenv("META_SYSTEM_TOKEN")
+# Forza Page + IG live in the new Forza Meta portfolio (created 2026-04-28
+# after Sara/Emma/Lester WhatsApp delete-and-recreate), so they need their
+# own system-user token. The 3 Nucassa Pages stay in the original Nucassa
+# portfolio on the existing META_SYSTEM_TOKEN. _meta_token_for_* helpers
+# below pick the right one per asset id.
+META_SYSTEM_TOKEN_FORZA = os.getenv("META_SYSTEM_TOKEN_FORZA")
 
 # LinkedIn — multi-account, multi-app (Nucassa app for gg/emma, Forza app for sue/gg_forza)
 LI_CLIENT_ID            = os.getenv("LI_CLIENT_ID", "")
@@ -1754,21 +1760,38 @@ async def render_static_image(content: dict, brand: str) -> bytes | None:
 _page_token_cache: dict = {}
 
 
+def _meta_token_for_ig(ig_account_id: str) -> str | None:
+    """Return the system-user token that has permission on this IG account."""
+    if ig_account_id and IG_FORZA and ig_account_id == IG_FORZA:
+        return META_SYSTEM_TOKEN_FORZA or META_SYSTEM_TOKEN
+    return META_SYSTEM_TOKEN
+
+
+def _meta_token_for_fb(fb_page_id: str) -> str | None:
+    """Return the system-user token that has permission on this FB Page."""
+    if fb_page_id and FB_FORZA and fb_page_id == FB_FORZA:
+        return META_SYSTEM_TOKEN_FORZA or META_SYSTEM_TOKEN
+    return META_SYSTEM_TOKEN
+
+
 async def get_page_token(page_id: str) -> str | None:
     """Get a Page Access Token via the system user's /accounts endpoint."""
     if page_id in _page_token_cache:
         return _page_token_cache[page_id]
+    sys_token = _meta_token_for_fb(page_id)
+    if not sys_token:
+        return None
     try:
         # Get system user ID first
         async with httpx.AsyncClient(timeout=15) as client:
             me = await client.get("https://graph.facebook.com/v18.0/me",
-                                  params={"access_token": META_SYSTEM_TOKEN})
+                                  params={"access_token": sys_token})
             user_id = me.json().get("id")
             if not user_id:
                 return None
             # List pages with their tokens
             r = await client.get(f"https://graph.facebook.com/v18.0/{user_id}/accounts",
-                                 params={"access_token": META_SYSTEM_TOKEN})
+                                 params={"access_token": sys_token})
             for page in r.json().get("data", []):
                 if page["id"] == page_id:
                     _page_token_cache[page_id] = page["access_token"]
@@ -1869,7 +1892,7 @@ async def upload_image_to_ig(ig_account_id: str, image_bytes: bytes, caption: st
     await asyncio.sleep(2)
     upload_url = f"https://graph.facebook.com/v18.0/{ig_account_id}/media"
     params = {
-        "access_token": META_SYSTEM_TOKEN,
+        "access_token": _meta_token_for_ig(ig_account_id),
         "image_url": image_url,
         "is_carousel_item": "true" if is_carousel_item else "false",
     }
@@ -1916,9 +1939,10 @@ _last_ig_upload_error: str = ""
 async def publish_ig_carousel(ig_account_id: str, container_ids: list[str], caption: str) -> dict:
     """Publish a carousel post from multiple container IDs."""
     # Create carousel container
+    ig_token = _meta_token_for_ig(ig_account_id)
     carousel_url = f"https://graph.facebook.com/v18.0/{ig_account_id}/media"
     carousel_params = {
-        "access_token": META_SYSTEM_TOKEN,
+        "access_token": ig_token,
         "media_type": "CAROUSEL",
         "caption": caption,
         "children": ",".join(container_ids),
@@ -1931,7 +1955,7 @@ async def publish_ig_carousel(ig_account_id: str, container_ids: list[str], capt
                 return {"error": r.json()}
             # Wait for Meta to process media, then publish with retries
             pub_url = f"https://graph.facebook.com/v18.0/{ig_account_id}/media_publish"
-            pub_params = {"access_token": META_SYSTEM_TOKEN, "creation_id": carousel_id}
+            pub_params = {"access_token": ig_token, "creation_id": carousel_id}
             for attempt in range(5):
                 await asyncio.sleep(5 + attempt * 3)  # 5s, 8s, 11s, 14s, 17s
                 r2 = await client.post(pub_url, params=pub_params)
@@ -1953,7 +1977,7 @@ async def publish_ig_single(ig_account_id: str, image_bytes: bytes, caption: str
     if not container_id:
         return {"error": "Upload failed"}
     pub_url = f"https://graph.facebook.com/v18.0/{ig_account_id}/media_publish"
-    params = {"access_token": META_SYSTEM_TOKEN, "creation_id": container_id}
+    params = {"access_token": _meta_token_for_ig(ig_account_id), "creation_id": container_id}
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             for attempt in range(5):
@@ -2383,7 +2407,7 @@ async def publish_linkedin_carousel(page_id: str, images_bytes_list: list, capti
 
 # ── PERMALINK FETCHING ────────────────────────────────────────────────────────
 
-async def _ig_permalink(media_id: str) -> str:
+async def _ig_permalink(media_id: str, ig_account_id: str = "") -> str:
     """Fetch IG permalink for a published media_id. Returns url or ''. Never raises."""
     if not media_id:
         return ""
@@ -2391,7 +2415,7 @@ async def _ig_permalink(media_id: str) -> str:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(
                 f"https://graph.facebook.com/v18.0/{media_id}",
-                params={"access_token": META_SYSTEM_TOKEN, "fields": "permalink"},
+                params={"access_token": _meta_token_for_ig(ig_account_id), "fields": "permalink"},
             )
             return r.json().get("permalink", "") or ""
     except Exception:
@@ -2403,7 +2427,7 @@ async def _fb_permalink(post_id: str, page_id: str) -> str:
     if not post_id:
         return ""
     try:
-        page_token = await get_page_token(page_id) or META_SYSTEM_TOKEN
+        page_token = await get_page_token(page_id) or _meta_token_for_fb(page_id)
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(
                 f"https://graph.facebook.com/v18.0/{post_id}",
@@ -2451,7 +2475,7 @@ async def _build_post_summary(brand: str, results: dict, cfg: dict) -> str:
             lines.append(f"IG: FAIL — {err}")
         else:
             media_id = ig.get("id") if isinstance(ig, dict) else ""
-            url = await _ig_permalink(media_id)
+            url = await _ig_permalink(media_id, cfg.get("ig_account_id", ""))
             lines.append(f"IG: OK {url}".rstrip())
 
     # Facebook
@@ -4005,6 +4029,12 @@ async def startup():
     _missing = [v for v in _required if not os.getenv(v)]
     if _missing:
         log.error(f"MISSING REQUIRED ENV VARS: {', '.join(_missing)} — Mark cannot start properly")
+    if (FB_FORZA or IG_FORZA) and not META_SYSTEM_TOKEN_FORZA:
+        log.error(
+            "META_SYSTEM_TOKEN_FORZA is unset but FB_FORZA/IG_FORZA are configured — "
+            "Forza posts will fail because the Nucassa-portfolio token has no permission "
+            "on the Forza Page/IG (they live in the new Forza Meta portfolio)."
+        )
 
     # Mark v2 — autonomous mode, GG talks to Mark directly
     from mark_v2_brain import mark_v2_listener
