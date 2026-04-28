@@ -92,19 +92,51 @@ async def send_tg(text: str, reply_markup: dict = None) -> dict:
     return last
 
 
-async def send_tg_photo(image_bytes: bytes, caption: str = "") -> dict:
+async def send_tg_photo(image_bytes: bytes, caption: str = "", retries: int = 2) -> dict:
+    """Send a single photo to Telegram. Retries on Telegram-side rejection
+    (ok=false) — without this, slide 1 silently fails for the rare cases
+    where Telegram's CDN rejects the upload (rate limit, transient 500),
+    leaving GG looking at a 3-slide preview when 4 slides were rendered.
+    GG flagged this pattern 2026-04-28 for Forza covers specifically."""
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    last: dict = {}
+    for attempt in range(retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.post(
+                    url,
+                    data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption[:1024], "parse_mode": "Markdown"},
+                    files={"photo": ("slide.png", image_bytes, "image/png")},
+                )
+                last = r.json()
+                if last.get("ok"):
+                    return last
+                log.warning(f"sendPhoto attempt {attempt+1}/{retries+1} not ok: {str(last)[:200]}")
+        except Exception as e:
+            log.error(f"Telegram photo error attempt {attempt+1}/{retries+1}: {e}")
+        if attempt < retries:
+            await asyncio.sleep(1.5 * (attempt + 1))
+    return last
+
+
+def _image_is_valid(img_bytes: bytes) -> bool:
+    """PIL-decode an image to confirm it's actually a renderable PNG/JPG.
+    The previous slide_1_ok check was just `len > 1024` — a black or empty
+    PNG still passes that. PIL's verify() catches truncated / corrupt /
+    zero-pixel images that would render blank on Telegram + IG."""
+    if not img_bytes or len(img_bytes) < 1024:
+        return False
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(
-                url,
-                data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption[:1024], "parse_mode": "Markdown"},
-                files={"photo": ("slide.png", image_bytes, "image/png")},
-            )
-            return r.json()
+        from PIL import Image
+        import io as _io
+        im = Image.open(_io.BytesIO(img_bytes))
+        im.verify()
+        # verify() invalidates the image obj — reopen to read dims.
+        im2 = Image.open(_io.BytesIO(img_bytes))
+        return im2.width > 0 and im2.height > 0
     except Exception as e:
-        log.error(f"Telegram photo error: {e}")
-        return {}
+        log.warning(f"image validation failed: {e}")
+        return False
 
 
 async def answer_cb(cb_id: str, text: str = ""):
@@ -296,24 +328,40 @@ async def generate_and_render(brand: str, topic: str, content_type: str = "carou
     sizes = [len(b) if b else 0 for b in (images or [])]
     log.info(f"[render guard] brand={brand} ct={content_type} types={slide_types} sizes={sizes}")
     expected = 1 if content_type == "static" else len(slides)
-    slide_1_ok = bool(images) and bool(images[0]) and len(images[0]) > 1024 and len(images) == expected
+    slide_1_ok = bool(images) and _image_is_valid(images[0]) and len(images) == expected
     if not slide_1_ok:
         if not images:
             why = "no slides rendered"
         elif len(images) != expected:
             why = f"got {len(images)} slides, expected {expected} (types={slide_types})"
         else:
-            why = f"cover slide (slide 1) is empty or too small (bytes={sizes[0]})"
+            why = f"cover slide (slide 1) failed PIL validation (bytes={sizes[0]})"
         await send_tg(
             f"⚠️ Render failed for *{brand_display.get(brand, brand)}* ({content_type}) — {why}. "
             f"Not showing POST buttons — no post goes out without a working slide 1."
         )
         return
 
-    # Send preview — each slide as its own Telegram photo.
+    # Send preview — each slide as its own Telegram photo. If Telegram
+    # rejects ANY slide send (ok=false) after retries, abort the preview
+    # so GG never sees a 3-slide-of-4 carousel and assumes Mark broke
+    # again. Slide 1 in particular: extra-strict — fail loud, not silent.
     for i, img in enumerate(images):
+        if not _image_is_valid(img):
+            await send_tg(
+                f"⚠️ Slide {i+1}/{len(images)} for *{brand_display.get(brand, brand)}* failed PIL validation — "
+                f"aborting preview. Re-render not auto-fired; tap your way back via the brand keyboard."
+            )
+            return
         cap = f"*Slide {i+1}/{len(images)}*"
-        await send_tg_photo(img, cap)
+        resp = await send_tg_photo(img, cap)
+        if not resp.get("ok"):
+            err = (resp.get("description") or str(resp))[:160]
+            await send_tg(
+                f"⚠️ Telegram rejected slide {i+1}/{len(images)} for *{brand_display.get(brand, brand)}*: {err}. "
+                f"Aborting preview — not posting until this clears."
+            )
+            return
 
     caption = content.get("caption", "")
     if caption:
