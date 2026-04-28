@@ -103,25 +103,34 @@ BRAND_CONTEXT = {
     "nucassa_re": {
         "name": "Nucassa Real Estate",
         "handle": "@nucassadubai",
-        "audience": "Property buyers, sellers, and investors in Dubai. Mix of end-users and investors.",
+        "website": "nucassa.com",
+        "audience": "Property buyers, sellers, and investors in Dubai. HNW global buyers seeking Dubai luxury residential. End-users and individual investors — NOT institutional.",
         "tone": "Authoritative, data-led, factual. Bold and confident but never salesy. Uses real DLD data and market statistics.",
-        "topics": "Dubai property transactions, area spotlights, yield data, off-plan vs ready, population growth, infrastructure, market comparisons",
+        "topics": "Dubai property transactions, area spotlights, yield data, off-plan vs ready, population growth, infrastructure, market comparisons, golden visa / residency for buyers, neighbourhood guides",
+        "search_universe": "Dubai/UAE residential real estate news. DLD transaction data, CBRE/JLL/Knight Frank/Savills market reports, Gulf News property, Arabian Business property, Zawya, Bloomberg Middle East property. Focus: prices, transactions, areas, buyer/investor angles for individual properties.",
+        "off_brand": "NEVER write institutional/SPV/family-office/fund content (that's Holdings). NEVER write marketplace-fee-disruption content (that's ListR). NEVER write commercial RE / office leasing. NEVER write properties outside UAE. NEVER write business operating systems / Forza content.",
         "cta": "DM us today",
     },
     "nucassa_holdings": {
         "name": "Nucassa Holdings Ltd",
         "handle": "@nucassaholdings_ltd",
-        "audience": "Institutional investors, family offices, UHNW individuals. $1M+ ticket size.",
-        "tone": "Institutional, precise, investor-grade. Goldman Sachs meets Dubai. Data-heavy, comparison-driven.",
-        "topics": "ADGM SPV structures, capital protection, tax efficiency, family office migration, UAE vs London/Singapore, DBS custody, fixed income vs equity",
+        "website": "nucassa.holdings",
+        "audience": "Institutional investors, family offices, private bank allocators, UHNW with allocation mandates. $1M+ minimum ticket. Sophisticated capital — they speak SPVs, ring-fencing, fixed-income vs equity, distribution waterfalls.",
+        "tone": "Institutional, precise, investor-grade. Goldman Sachs sales memo, not retail RE pitch. Data-heavy, comparison-driven, no hype.",
+        "topics": "ADGM SPV structures, ring-fencing & non-voting economic shares, DBS Singapore custody mechanics, three-year cycles & capital deployment phases, fixed-income notes vs equity participation, the Platinum multi-investor option, UAE as institutional capital destination vs London/Singapore/Cayman, family office migration to ADGM, regulated RE alternatives vs direct ownership, 5% one-off mgmt fee economics.",
+        "search_universe": "INSTITUTIONAL real estate alternatives + family office news. NOT Dubai property news. Sources: PERE, IPE Real Assets, WSJ Pro Private Markets, Reuters Wealth, Bloomberg Family Office / Wealth, Preqin reports, FSRA/ADGM regulatory news, DIFC vs ADGM fund flow data, family office migration to UAE, sovereign wealth allocation trends, private RE fund raises, fixed-income credit alternatives.",
+        "off_brand": "NEVER write Dubai property listings, neighbourhood guides, area spotlights, or 'buy a Dubai apartment' angles (that's Nucassa RE). NEVER mention specific property addresses, individual unit prices, or DLD transaction tickers as the post subject. NEVER write retail/budget content. NEVER pitch as a quick flip or short-term yield play — capital is locked 24+ months. NEVER discuss other brands (RE, ListR, Forza) in copy.",
         "cta": "Message us to learn more",
     },
     "listr": {
         "name": "ListR.ae",
         "handle": "@listr.ae",
-        "audience": "Property buyers and sellers in Dubai who want to save on fees. Tech-savvy, value-conscious.",
-        "tone": "Modern, direct, disruptive. Cutting unnecessary fees. Sharp and confident.",
-        "topics": "Commission savings, direct buyer-seller, verified listings, RERA, secondary market, fee comparison, agent empowerment (90% commission)",
+        "website": "listr.ae",
+        "audience": "UAE property buyers, sellers, and agents. Buyers/sellers want lower fees and verified listings. Agents want qualified leads and 90% commission. Tech-savvy, value-conscious, fee-aware.",
+        "tone": "Modern, direct, disruptive. Cutting unnecessary fees. Sharp and confident, but factual not preachy.",
+        "topics": "1% seller commission vs traditional 2%, direct buyer-seller flow, title-deed verification, RERA & secondary market mechanics, AI-WhatsApp matching, agent empowerment (90% commission split), fee comparison case studies, off-plan vs ready in emerging Dubai districts, traditional-agency markup teardowns.",
+        "search_universe": "Real estate marketplace + commission disruption news. Compass / Zillow / Redfin / OpenAgent outcomes, fee-model shifts, secondary market direct-sale stories, RERA regulatory updates, DLD secondary transaction data, prop-tech raises and exits, AI-driven property matching trends.",
+        "off_brand": "NEVER write institutional/SPV/family-office content (that's Holdings). NEVER write Dubai luxury lifestyle / neighbourhood guides as the lead angle (that's RE). NEVER write mortgage lending or financing products (ListR doesn't sell those). NEVER write property management / rental services. NEVER write properties outside UAE.",
         "cta": "Sign up free at ListR.ae",
     },
     "forza": {
@@ -402,23 +411,32 @@ Build a 4-slide carousel with the Forza tone (no emojis, no exclamation marks, n
 Return ONLY the JSON structure described in your instructions."""
         use_web_search = False
     else:
+        # Per-brand search universe and off-brand list. Without this, every
+        # non-Forza brand defaults to "search Dubai real estate news" — which
+        # is correct for Nucassa RE but wrong for Holdings (institutional
+        # investment platform) and ListR (marketplace/fee disruption). That
+        # was the brand-bleed bug: Holdings posts kept reading like RE listings.
+        search_universe = brand_ctx.get("search_universe", "")
+        off_brand = brand_ctx.get("off_brand", "")
         search_prompt = f"""Today is {today} (Dubai time).
 
-Brand: {brand_ctx['name']} ({brand_ctx['handle']})
+Brand: {brand_ctx['name']} ({brand_ctx.get('website', brand_ctx['handle'])})
 Audience: {brand_ctx['audience']}
 Tone: {brand_ctx['tone']}
-Topics: {brand_ctx['topics']}
+Topics this brand covers: {brand_ctx['topics']}
 CTA: {brand_ctx['cta']}
+
+OFF-BRAND — DO NOT WRITE ABOUT THESE:
+{off_brand}
+
 {dedup_block}
-{"Specific topic requested: " + specific_topic if specific_topic else "Find the most relevant, timely topic for today's post."}
+{"Specific topic requested: " + specific_topic if specific_topic else "Find the most relevant, timely topic for today's post — within this brand's universe only."}
 
-Search for the latest Dubai real estate news, data, and market sentiment. Look for:
-- DLD transaction data
-- Recent market reports from CBRE, JLL, Knight Frank, Savills
-- Gulf News, Arabian Business, Zawya, Bloomberg Middle East
-- Any geopolitical factors affecting Dubai market sentiment
+SEARCH UNIVERSE (use ONLY these source families — do NOT default to generic Dubai property news):
+{search_universe}
 
-Then create a 4-slide Instagram carousel that is factual and data-driven.
+Then create a 4-slide Instagram carousel that is factual and data-driven, framed inside this brand's audience and tone. Every slide must be unmistakably about THIS brand's offering — not a sister brand's. If the angle starts drifting toward an off-brand topic, pick a different angle.
+
 If the market is down, don't pretend it's up — find the honest angle that still serves the brand.
 
 Return ONLY the JSON structure described in your instructions."""
@@ -639,19 +657,30 @@ Return this string verbatim in the "topic" field of the forza suggestion. In the
 
     prompt = f"""Today is {today} (Dubai time).
 
-You manage FOUR brands. The three Nucassa brands ride today's news. Forza does NOT (it's in launch mode).
+You manage FOUR brands. EACH BRAND HAS ITS OWN SEARCH UNIVERSE. Do NOT default Holdings or ListR to Dubai property news — that was the bug we just fixed.
 
-For the three Nucassa brands: search Dubai / UAE real estate news, economic data, market reports, geopolitics — DLD, CBRE/JLL/Knight Frank/Savills, Gulf News, Arabian Business, Bloomberg Middle East.
+══ NUCASSA REAL ESTATE (nucassa.com) ══
+Audience: HNW global buyers of Dubai luxury residential. Individual investors, end-users.
+Search universe: Dubai/UAE residential property news. DLD transactions, CBRE/JLL/Knight Frank/Savills, Gulf News property, Arabian Business property, Zawya, Bloomberg Middle East property.
+On-brand topics: prices, transactions, areas, off-plan vs ready, golden visa, neighbourhood data.
+OFF-BRAND for RE: institutional/SPV/family-office (Holdings), commission disruption (ListR), commercial/office, anything outside UAE.
 
+══ NUCASSA HOLDINGS (nucassa.holdings) ══
+Audience: Institutional investors, family offices, private bank allocators. $1M minimum ticket. They speak SPVs, ring-fencing, fixed-income vs equity.
+Search universe: INSTITUTIONAL real estate alternatives + family office news. NOT Dubai property news. Sources: PERE, IPE Real Assets, WSJ Pro Private Markets, Reuters Wealth, Bloomberg Family Office, Preqin, FSRA/ADGM regulatory news, DIFC/ADGM fund flows, sovereign allocation trends, private RE fund raises, fixed-income credit alternatives.
+On-brand topics: ADGM SPV mechanics, DBS Singapore custody, three-year cycle structuring, fixed-income note vs equity participation, Platinum multi-investor option, UAE as institutional capital destination vs London/Singapore/Cayman, family office migration to ADGM.
+OFF-BRAND for Holdings: Dubai property listings, neighbourhood guides, area spotlights, "buy a Dubai apartment", individual unit prices, DLD transaction tickers as the subject, retail/budget content, short-term flip pitches.
+
+══ LISTR (listr.ae) ══
+Audience: UAE property buyers/sellers/agents. Fee-aware, tech-savvy.
+Search universe: Real estate marketplace + commission disruption news. Compass/Zillow/Redfin outcomes, fee-model shifts, secondary-market direct-sale stories, RERA updates, DLD secondary transaction data, prop-tech raises, AI-driven property matching.
+On-brand topics: 1% seller commission vs 2% traditional, direct buyer-seller flow, title-deed verification, AI-WhatsApp matching, 90% agent commission split, fee-comparison case studies.
+OFF-BRAND for ListR: institutional/SPV (Holdings), Dubai luxury lifestyle as the lead angle (RE), mortgages/financing, property management.
+
+══ FORZA (forzasystems.ai) ══
 {forza_instruction}
 
-Brand contexts:
-- Nucassa Real Estate (@nucassadubai): Property market data, transactions, areas, buyer guides
-- Nucassa Holdings (@nucassaholdings_ltd): Institutional investment, family offices, ADGM/DIFC, macro
-- ListR.ae (@listr.ae): Property marketplace, fee disruption, buyer/seller empowerment
-- Forza (@forza_ai_): Business operating systems for growth-stage service companies. First 30 days = pure service promotion. Audience: founders of brokerages, clinics, law firms, recruitment, institutional investment, agencies. Operator-led, premium, no startup hype, no emojis, no exclamation marks.
-
-Suggest ONE topic per brand with a clear angle. Each suggestion should explain WHY this is the right topic for today.
+Suggest ONE topic per brand with a clear angle. Each suggestion lives strictly inside its own brand universe — if Holdings angle reads like an RE post, you've drifted off-brand and must re-pick.
 
 OUTPUT ALL FOUR BRANDS. Do not skip Forza."""
 
