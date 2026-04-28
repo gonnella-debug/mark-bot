@@ -3506,6 +3506,118 @@ async def api_posting_log(days: int = 0, per_brand: int = 0):
     return out
 
 
+@app.post("/admin/backfill_post_thumbs")
+async def admin_backfill_post_thumbs(request: Request):
+    """One-shot backfill: for every posting_log entry without a cover
+    thumbnail, find slide1.png in the brand's Drive folder by timestamp
+    match (uploads use `YYYY-MM-DD_HHMM` and live in
+    GDRIVE_MARKETING_BRAND_FOLDERS[brand]), download, generate a 640px
+    JPG thumb, save to /data/post_thumbs, and stamp `cover_filename`
+    onto the log entry. GG triggered 2026-04-28 because the dashboard
+    panel was showing every post as 'no thumbnail (older post)'.
+
+    Auth: requires the same admin token Dave uses (DAVE_ADMIN_TOKEN if
+    set in Mark env, else MARK_ADMIN_TOKEN, else open if neither is
+    set so a fresh deploy can self-bootstrap)."""
+    expected = os.getenv("MARK_ADMIN_TOKEN") or os.getenv("DAVE_ADMIN_TOKEN") or ""
+    if expected:
+        provided = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+        if provided != expected:
+            return JSONResponse({"error": "unauthorised"}, status_code=401)
+
+    token = await _get_drive_upload_token()
+    if not token:
+        return JSONResponse({"error": "no Drive token"}, status_code=503)
+
+    stats = {"scanned": 0, "already_had_thumb": 0, "filled": 0, "no_drive_match": 0, "download_failed": 0, "no_id_assigned": 0, "missing_brand_folder": 0}
+    folder_listings: dict[str, list[dict]] = {}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        for entry in posting_log:
+            stats["scanned"] += 1
+            if entry.get("cover_filename"):
+                stats["already_had_thumb"] += 1
+                continue
+
+            if not entry.get("id"):
+                entry["id"] = str(uuid.uuid4())[:12]
+                stats["no_id_assigned"] += 1
+
+            brand = entry.get("brand", "")
+            folder_id = GDRIVE_MARKETING_BRAND_FOLDERS.get(brand)
+            if not folder_id:
+                stats["missing_brand_folder"] += 1
+                continue
+
+            ts_iso = entry.get("timestamp", "")
+            try:
+                dt = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                stats["no_drive_match"] += 1
+                continue
+            ts_key = dt.strftime("%Y-%m-%d_%H%M")
+            ts_key_prev = (dt - timedelta(minutes=1)).strftime("%Y-%m-%d_%H%M")
+            ts_key_next = (dt + timedelta(minutes=1)).strftime("%Y-%m-%d_%H%M")
+
+            if folder_id not in folder_listings:
+                files: list[dict] = []
+                page_token: str | None = None
+                while True:
+                    params = {
+                        "q": f"'{folder_id}' in parents and trashed=false and name contains 'slide1'",
+                        "fields": "nextPageToken,files(id,name)",
+                        "pageSize": 1000,
+                        "supportsAllDrives": "true",
+                        "includeItemsFromAllDrives": "true",
+                    }
+                    if page_token:
+                        params["pageToken"] = page_token
+                    r = await client.get(
+                        "https://www.googleapis.com/drive/v3/files",
+                        headers={"Authorization": f"Bearer {token}"},
+                        params=params,
+                    )
+                    if r.status_code != 200:
+                        log.warning(f"Drive list failed for {folder_id}: {r.status_code}")
+                        break
+                    j = r.json()
+                    files.extend(j.get("files", []))
+                    page_token = j.get("nextPageToken")
+                    if not page_token:
+                        break
+                folder_listings[folder_id] = files
+
+            match = next(
+                (f for f in folder_listings[folder_id] if any(k in f["name"] for k in (ts_key, ts_key_prev, ts_key_next))),
+                None,
+            )
+            if not match:
+                stats["no_drive_match"] += 1
+                continue
+
+            try:
+                r = await client.get(
+                    f"https://www.googleapis.com/drive/v3/files/{match['id']}?alt=media&supportsAllDrives=true",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                if r.status_code != 200:
+                    stats["download_failed"] += 1
+                    continue
+                png_bytes = r.content
+            except Exception as e:
+                log.warning(f"Drive download failed for {match['id']}: {e}")
+                stats["download_failed"] += 1
+                continue
+
+            saved = _save_post_cover_thumb(entry["id"], png_bytes)
+            if saved:
+                entry["cover_filename"] = saved
+                stats["filled"] += 1
+
+    _save_posting_log()
+    return {"ok": True, "stats": stats}
+
+
 @app.get("/post_thumbs/{filename}")
 async def serve_post_thumb(filename: str):
     """Serve a JPG cover thumbnail by filename. Used by Alex's dashboard
