@@ -339,6 +339,29 @@ last_batch: dict = {}          # brand → list[content_dict]
 li_oauth_states: dict = {}     # state → brand (for OAuth flow)
 _last_rendered: dict = {}      # brand → {"content": dict, "images": list[bytes], "timestamp": float}
 POSTING_LOG_FILE = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "mark_posting_log.json")
+POST_THUMBS_DIR = os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"), "post_thumbs")
+os.makedirs(POST_THUMBS_DIR, exist_ok=True)
+
+
+def _save_post_cover_thumb(post_id: str, png_bytes: bytes) -> str | None:
+    """Persist the carousel cover (slide 0) as a smallish JPG so Alex's
+    dashboard can show GG visual proof of what shipped this week. Returns
+    the basename or None on any failure (thumbnails are best-effort —
+    a thumb miss must not block posting)."""
+    try:
+        from PIL import Image
+        import io as _io
+        img = Image.open(_io.BytesIO(png_bytes))
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img.thumbnail((640, 640))
+        name = f"{post_id}.jpg"
+        out_path = os.path.join(POST_THUMBS_DIR, name)
+        img.save(out_path, "JPEG", quality=82, optimize=True)
+        return name
+    except Exception as e:
+        log.warning(f"thumb save failed for {post_id}: {e}")
+        return None
 
 def _load_posting_log() -> list:
     """Load posting log from persistent storage — survives Railway redeploys if volume attached."""
@@ -2629,7 +2652,17 @@ async def post_content(content: dict, brand: str) -> dict:
     # Record to posting log so Alex can query what was published
     platform_count = sum(1 for k, v in results.items() if k not in ("drive_saved", "files_sent") and "error" not in str(v))
     total_platforms = sum(1 for k in results if k not in ("drive_saved", "files_sent"))
+
+    # Persist the cover slide as a JPG thumbnail so Alex's dashboard can
+    # render it next to the topic — gives GG visual proof Mark is not
+    # repeating designs (text-only posting log can't catch that).
+    post_id = str(uuid.uuid4())[:12]
+    cover_filename: str | None = None
+    if images and images[0]:
+        cover_filename = _save_post_cover_thumb(post_id, images[0])
+
     posting_log.append({
+        "id": post_id,
         "brand": brand,
         "brand_name": BRANDS[brand]["name"],
         "content_type": ct,
@@ -2639,6 +2672,7 @@ async def post_content(content: dict, brand: str) -> dict:
         "platform_results": {k: ("ok" if "error" not in str(v) else str(v)) for k, v in results.items() if k not in ("drive_saved", "files_sent")},
         "drive_saved": results.get("drive_saved", False),
         "visuals_used": visuals_used,
+        "cover_filename": cover_filename,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     _save_posting_log()
@@ -3446,6 +3480,7 @@ async def api_posting_log(days: int = 0, per_brand: int = 0):
             b = p.get("brand", "unknown")
             by_brand.setdefault(b, [])
             if len(by_brand[b]) < per_brand:
+                cover = p.get("cover_filename")
                 by_brand[b].append({
                     "topic": p.get("topic", ""),
                     "content_type": p.get("content_type", ""),
@@ -3453,10 +3488,25 @@ async def api_posting_log(days: int = 0, per_brand: int = 0):
                     "platforms_ok": p.get("platforms_ok", 0),
                     "platforms_total": p.get("platforms_total", 0),
                     "visuals_used": p.get("visuals_used") or {},
+                    "cover_url": (f"/post_thumbs/{cover}" if cover else None),
                 })
         out["recent_by_brand"] = by_brand
 
     return out
+
+
+@app.get("/post_thumbs/{filename}")
+async def serve_post_thumb(filename: str):
+    """Serve a JPG cover thumbnail by filename. Used by Alex's dashboard
+    Mark tab. Filename is constrained to a uuid-like basename (no path
+    traversal) and must exist in POST_THUMBS_DIR."""
+    from fastapi.responses import FileResponse
+    if "/" in filename or ".." in filename or not filename.endswith(".jpg"):
+        return Response(status_code=404)
+    path = os.path.join(POST_THUMBS_DIR, filename)
+    if not os.path.exists(path):
+        return Response(status_code=404)
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.post("/pdf_post")
