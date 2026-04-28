@@ -3026,13 +3026,74 @@ async def handle_callback(update: dict):
         pending_approvals.pop(msg_id, None)
 
     elif action in ("regen_single", "regen_one"):
-        await answer_callback(cb_id, "Regenerating with new photos...")
+        # Render-stage regenerate: keep the SAME content (caption, slide copy,
+        # topic) and re-render only. The previously-shown Forza cover variant
+        # and any backgrounds are forced into the exclude list so we cannot
+        # land on the same design twice in a session. GG's directive 2026-04-28
+        # after seeing the same Forza cover three regen-clicks in a row.
+        await answer_callback(cb_id, "Re-rendering visuals (same content)...")
         pending_approvals.pop(msg_id, None)
-        topic = content.get("_topic", "")
         ct = content.get("_content_type", "carousel")
-        # Add timestamp to force different photo selection
-        new_topic = topic + f" _v{int(time.time())}"
-        await _run_single(brand, ct, new_topic)
+
+        prev_visuals = content.get("_visuals_used") or {}
+        prev_variant = prev_visuals.get("forza_cover_variant")
+        prev_bgs = prev_visuals.get("backgrounds") or []
+
+        await send_telegram(f"_Re-rendering {BRANDS[brand]['name']} {ct} — same content, new visuals..._")
+
+        new_images: list[bytes] = []
+        new_visuals: dict = {"backgrounds": [], "forza_cover_variant": None}
+        try:
+            from renderer import render_carousel as _rc, render_static
+            if ct == "carousel" or ct == "reels":
+                slides = content.get("slides") or []
+                if slides:
+                    exc_variants = [prev_variant] if prev_variant else None
+                    new_images, new_visuals = await _rc(
+                        slides, brand,
+                        exclude_backgrounds=prev_bgs or None,
+                        exclude_forza_variants=exc_variants,
+                    )
+            elif ct in ("static", "story"):
+                img = await render_static_image(content, brand)
+                new_images = [img] if img else []
+        except Exception as e:
+            log.error(f"regen re-render failed: {e}")
+
+        if not new_images:
+            await send_telegram(f"⚠️ Re-render failed for {BRANDS[brand]['name']}. Tap Reject + send a new `breaking:` command if you want fresh content.")
+            return
+
+        for i, img_bytes in enumerate(new_images):
+            try:
+                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+                async with httpx.AsyncClient(timeout=30) as client:
+                    await client.post(url, data={"chat_id": TELEGRAM_CHAT_ID}, files={"photo": (f"slide{i+1}.png", img_bytes, "image/png")})
+            except Exception as e:
+                log.error(f"Photo send error: {e}")
+
+        # Update cached images + visuals on the same content dict, then re-show
+        # POST buttons over a fresh approval message.
+        content["_rendered_images_b64"] = [base64.b64encode(img).decode() for img in new_images]
+        content["_visuals_used"] = new_visuals
+
+        cap = content.get("caption_instagram", "")
+        tags = " ".join(content.get("hashtags", []))
+        if tags:
+            cap = f"{cap}\n\n{tags}"
+        safe_cap = cap.replace("*", "").replace("_", "").replace("`", "").replace("[", "").replace("]", "")
+        markup = {"inline_keyboard": [
+            [{"text": "🚀 POST NOW", "callback_data": f"post_now|{brand}"},
+             {"text": "🕕 POST 6PM", "callback_data": f"schedule_6pm|{brand}"}],
+            [{"text": "❌ Reject", "callback_data": f"reject_single|{brand}"},
+             {"text": "🔄 Regenerate", "callback_data": f"regen_single|{brand}||"}],
+        ]}
+        new_msg = await send_telegram(
+            f"{BRANDS[brand]['name']}\n\n{safe_cap}\n\nRe-rendered. Tap POST NOW to publish, POST 6PM to schedule, or Regenerate again.",
+            reply_markup=markup,
+        )
+        if new_msg.get("result", {}).get("message_id"):
+            pending_approvals[new_msg["result"]["message_id"]] = {"content": content, "brand": brand, "batch_id": None, "idx": None}
 
     elif action == "reject_single":
         await answer_callback(cb_id, "Rejected")
@@ -3399,6 +3460,7 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
     # Render images and send as photos so GG can see what he's approving
     await send_telegram(f"_Rendering slides..._")
     rendered_images = []
+    visuals_used: dict = {"backgrounds": [], "forza_cover_variant": None}
     if content_type == "reels" and "script" in content and "slides" not in content:
         # Convert reel script beats into slides for visual preview
         script = content["script"]
@@ -3411,12 +3473,15 @@ async def _run_single(brand: str, content_type: str, topic: str, breaking: bool 
         if cta:
             fake_slides.append({"slide": len(fake_slides) + 1, "headline": cta, "cta_line": cta})
         content["slides"] = fake_slides
-        rendered_images, _ = await render_carousel_images(content, brand)
+        rendered_images, visuals_used = await render_carousel_images(content, brand)
     elif content_type == "carousel":
-        rendered_images, _ = await render_carousel_images(content, brand)
+        rendered_images, visuals_used = await render_carousel_images(content, brand)
     elif content_type in ("static", "story"):
         img = await render_static_image(content, brand)
         rendered_images = [img] if img else []
+    # Stash the visuals on content so the post-render Regenerate button can
+    # force a different cover variant without re-asking Claude for content.
+    content["_visuals_used"] = visuals_used
     # Guard: slide 1 is non-negotiable. GG's rule — a post without a working
     # cover never goes live. If the renderer produced NO images at all, or
     # the cover image (slot 0) is empty/zero-bytes, abort before showing any
@@ -3654,27 +3719,26 @@ async def linkedin_token_monitor():
 
 
 async def linkedin_health_check():
-    """Daily liveness probe — calls /rest/posts with author validation only and reports status per account."""
+    """Daily liveness probe. Silent by default (logs only). Only pings GG when
+    something actually needs his attention: an account is unauthenticated, a
+    probe failed, or a token is within EXPIRY_WARNING_DAYS of expiry. GG
+    flagged the daily 'all OK' message as noise 2026-04-28."""
+    EXPIRY_WARNING_DAYS = 7
     await asyncio.sleep(60)  # let the app settle
-    # On warm restarts (<10 min since last boot), skip the first immediate
-    # send; fall through to the 24h sleep so the next fire stays on cadence.
-    first_pass_skip = not should_send_boot_message("mark_linkedin_health", gap_seconds=600)
     while True:
-        if first_pass_skip:
-            first_pass_skip = False
-            await asyncio.sleep(86400)
-            continue
+        actionable: list[str] = []
+        log_lines = ["LinkedIn daily health check:"]
         try:
-            lines = ["LinkedIn daily health check:"]
             for acct, tok in LI_TOKENS.items():
                 at = tok.get("access_token", "")
                 pid = tok.get("person_id", "")
                 expiry = int(tok.get("expiry", 0) or 0)
                 days_left = max(0, (expiry - int(time.time())) // 86400) if expiry else 0
                 if not at or not pid:
-                    lines.append(f"  - {acct}: NOT AUTHENTICATED — visit {RAILWAY_URL}/linkedin/auth?account={acct}")
+                    msg = f"{acct}: NOT AUTHENTICATED — visit {RAILWAY_URL}/linkedin/auth?account={acct}"
+                    log_lines.append(f"  - {msg}")
+                    actionable.append(msg)
                     continue
-                # Cheap probe: initializeUpload for an image (won't actually upload)
                 try:
                     async with httpx.AsyncClient(timeout=15) as client:
                         r = await client.post(
@@ -3683,12 +3747,20 @@ async def linkedin_health_check():
                             json={"initializeUploadRequest": {"owner": f"urn:li:person:{pid}"}},
                         )
                     if r.status_code in (200, 201):
-                        lines.append(f"  - {acct}: OK ({days_left}d token left)")
+                        log_lines.append(f"  - {acct}: OK ({days_left}d token left)")
+                        if days_left <= EXPIRY_WARNING_DAYS:
+                            actionable.append(f"{acct}: token expires in {days_left}d — re-auth at {RAILWAY_URL}/linkedin/auth?account={acct}")
                     else:
-                        lines.append(f"  - {acct}: FAIL HTTP {r.status_code} — {r.text[:140]}")
+                        msg = f"{acct}: FAIL HTTP {r.status_code} — {r.text[:140]}"
+                        log_lines.append(f"  - {msg}")
+                        actionable.append(msg)
                 except Exception as e:
-                    lines.append(f"  - {acct}: probe error {e}")
-            await _tg_send_plain("\n".join(lines))
+                    msg = f"{acct}: probe error {e}"
+                    log_lines.append(f"  - {msg}")
+                    actionable.append(msg)
+            log.info("\n".join(log_lines))
+            if actionable:
+                await _tg_send_plain("LinkedIn — needs attention:\n" + "\n".join(f"  - {l}" for l in actionable))
         except Exception as e:
             log.error(f"linkedin_health_check error: {e}")
         await asyncio.sleep(86400)  # daily
