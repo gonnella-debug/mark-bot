@@ -19,12 +19,35 @@ FORZA_COVER_DIR = TEMPLATE_DIR / "forza_covers"
 ASSETS_DIR = TEMPLATE_DIR / "assets"
 
 
+DATA_DIR = Path(os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or os.getenv("DATA_DIR") or "/data")
+DRIVE_BG_CACHE = DATA_DIR / "mark_drive_bg"
+
+
+def _drive_cached_photos() -> list[str]:
+    """Local paths of images mirrored from Drive by drive_bg_sync_loop.
+    Empty list while the cache is cold or the folder isn't shared yet."""
+    if not DRIVE_BG_CACHE.exists():
+        return []
+    return [
+        str(p) for p in (
+            list(DRIVE_BG_CACHE.glob("*.png"))
+            + list(DRIVE_BG_CACHE.glob("*.jpg"))
+            + list(DRIVE_BG_CACHE.glob("*.jpeg"))
+            + list(DRIVE_BG_CACHE.glob("*.webp"))
+            + list(DRIVE_BG_CACHE.glob("*.PNG"))
+            + list(DRIVE_BG_CACHE.glob("*.JPG"))
+        )
+    ]
+
+
 def pick_forza_cover_photo(exclude: list[str] | None = None) -> str:
-    """Pick one photo from templates/forza_covers/ to sit behind the Forza
-    slide-1 composition. `exclude` is a list of full paths used in the last
-    7 days (same convention as pick_background). Falls back to the full pool
-    if exclusion empties it."""
-    all_photos = [str(p) for p in sorted(FORZA_COVER_DIR.glob("*.png")) + sorted(FORZA_COVER_DIR.glob("*.jpg"))]
+    """Pick one photo from templates/forza_covers/ + the Drive-mirrored
+    /data cache to sit behind the Forza slide-1 composition. `exclude`
+    is a list of full paths used in the last 7 days (same convention as
+    pick_background). Falls back to the full pool if exclusion empties it."""
+    local = [str(p) for p in sorted(FORZA_COVER_DIR.glob("*.png")) + sorted(FORZA_COVER_DIR.glob("*.jpg"))]
+    drive = _drive_cached_photos()
+    all_photos = local + drive
     if not all_photos:
         return ""
     excl = set(exclude or [])
@@ -66,11 +89,19 @@ BG_TAGS = {
 }
 
 def _init_backgrounds():
-    """Scan backgrounds folder and auto-tag images by filename."""
-    if BG_TAGS.get("all"):
-        return  # already initialized
+    """Scan backgrounds folder and auto-tag images by filename. Also
+    pulls in Drive-mirrored /data cache so a fresh upload to MARK SOCIALS
+    is available across all Nucassa+ListR cover renders, not just Forza."""
+    # Drive cache changes between calls (sync loop downloads new images),
+    # so we re-scan on every call. The cost is just os.listdir — cheap.
+    BG_TAGS["all"] = []
+    for k in BG_TAGS:
+        if k != "all":
+            BG_TAGS[k] = []
 
     all_bgs = sorted(BG_DIR.glob("*.png")) + sorted(BG_DIR.glob("*.jpg"))
+    drive_paths = [Path(p) for p in _drive_cached_photos()]
+    all_bgs = list(all_bgs) + drive_paths
 
     # Simple round-robin assignment for now — can be refined with Claude vision later
     categories = list(BG_TAGS.keys())

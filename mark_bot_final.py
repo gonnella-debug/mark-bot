@@ -2839,6 +2839,137 @@ async def _get_drive_upload_token() -> str | None:
         return None
 
 
+DRIVE_BG_FOLDER = os.getenv(
+    "GDRIVE_MARK_SOCIALS_FOLDER",
+    "1zE60AnjQROBUORfn86WCF_ddH1aIP3Iv",  # GG's MARK SOCIALS root
+)
+DATA_DIR = os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or os.getenv("DATA_DIR") or "/data"
+DRIVE_BG_CACHE = os.path.join(DATA_DIR, "mark_drive_bg")
+DRIVE_BG_SYNC_INTERVAL_SECONDS = int(os.getenv("DRIVE_BG_SYNC_INTERVAL_S", "21600"))  # 6h
+
+
+async def _drive_list_recursive(token: str, folder_id: str, depth: int = 0) -> list[dict]:
+    """Walk the Drive folder tree from `folder_id`. Returns a flat list
+    of {id, name, mimeType, size} for every non-folder file. Depth-limited
+    to 4 levels to avoid runaway descent on accidental loops."""
+    if depth > 4:
+        return []
+    out: list[dict] = []
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            page_token = None
+            while True:
+                params = {
+                    "q": f"'{folder_id}' in parents and trashed=false",
+                    "fields": "nextPageToken, files(id,name,mimeType,size,parents)",
+                    "pageSize": "200",
+                }
+                if page_token:
+                    params["pageToken"] = page_token
+                r = await client.get(
+                    "https://www.googleapis.com/drive/v3/files",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params=params,
+                )
+                if r.status_code != 200:
+                    log.warning(f"drive list {folder_id} returned {r.status_code}: {r.text[:160]}")
+                    return out
+                body = r.json() or {}
+                for f in body.get("files", []) or []:
+                    if f.get("mimeType") == "application/vnd.google-apps.folder":
+                        out.extend(await _drive_list_recursive(token, f["id"], depth + 1))
+                    else:
+                        out.append(f)
+                page_token = body.get("nextPageToken")
+                if not page_token:
+                    break
+    except Exception as e:
+        log.warning(f"drive list error for {folder_id}: {e}")
+    return out
+
+
+async def _drive_download(token: str, file_id: str, dst_path: str) -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.get(
+                f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        if r.status_code != 200:
+            log.warning(f"drive download {file_id} returned {r.status_code}")
+            return False
+        os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+        with open(dst_path, "wb") as f:
+            f.write(r.content)
+        return True
+    except Exception as e:
+        log.warning(f"drive download error for {file_id}: {e}")
+        return False
+
+
+async def drive_bg_sync_once() -> dict:
+    """Mirror the MARK SOCIALS Drive folder into a local /data cache.
+    Uses Mark's existing OAuth (sarahnucassa@gmail.com) — so MARK SOCIALS
+    must be shared with that account. The renderer unions this cache
+    with the repo-local templates folders, so new images dropped in
+    Drive show up on the next render after the next sync pass.
+
+    Returns counts so the dashboard / boot log can surface the state."""
+    token = await _get_drive_upload_token()
+    if not token:
+        return {"ok": False, "reason": "no Drive OAuth token", "cached": 0}
+    files = await _drive_list_recursive(token, DRIVE_BG_FOLDER)
+    images = [f for f in files if (f.get("mimeType") or "").startswith("image/")]
+    if not images:
+        return {"ok": True, "cached": 0, "found": 0, "note": "Drive folder empty or unreadable"}
+
+    os.makedirs(DRIVE_BG_CACHE, exist_ok=True)
+    # Build the manifest of what's currently cached so we can skip re-downloads.
+    existing = {fn for fn in os.listdir(DRIVE_BG_CACHE)} if os.path.isdir(DRIVE_BG_CACHE) else set()
+    fetched = 0
+    keep: set[str] = set()
+    for f in images:
+        # Use Drive file_id as the cache filename so renames in Drive don't
+        # cause re-downloads, AND so two different folders with the same
+        # filename don't collide. Original ext preserved.
+        name = f.get("name") or ""
+        ext = os.path.splitext(name)[1].lower() or ".png"
+        if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+            ext = ".png"
+        cache_name = f"{f['id']}{ext}"
+        keep.add(cache_name)
+        cache_path = os.path.join(DRIVE_BG_CACHE, cache_name)
+        if cache_name in existing and os.path.getsize(cache_path) > 1024:
+            continue
+        if await _drive_download(token, f["id"], cache_path):
+            fetched += 1
+    # Drop cached files that are no longer in Drive (so a delete in Drive
+    # cleans up the cache on next sync).
+    pruned = 0
+    for fn in existing:
+        if fn not in keep:
+            try:
+                os.remove(os.path.join(DRIVE_BG_CACHE, fn))
+                pruned += 1
+            except Exception:
+                pass
+    log.info(f"[drive_bg_sync] {len(images)} in Drive, {fetched} downloaded, {pruned} pruned, cache={DRIVE_BG_CACHE}")
+    return {"ok": True, "found": len(images), "fetched": fetched, "pruned": pruned, "cache_dir": DRIVE_BG_CACHE}
+
+
+async def drive_bg_sync_loop():
+    """Periodic mirror of MARK SOCIALS into /data. First pass on boot,
+    then every DRIVE_BG_SYNC_INTERVAL_SECONDS (default 6h)."""
+    await asyncio.sleep(15)  # let the rest of startup settle
+    while True:
+        try:
+            res = await drive_bg_sync_once()
+            log.info(f"[drive_bg_sync] result: {res}")
+        except Exception as e:
+            log.error(f"[drive_bg_sync] loop error: {e}")
+        await asyncio.sleep(DRIVE_BG_SYNC_INTERVAL_SECONDS)
+
+
 async def save_to_drive(brand: str, images: list[bytes], caption: str, content_type: str = "carousel") -> bool:
     """Save rendered images + caption to the brand's Mark Marketing subfolder."""
     token = await _get_drive_upload_token()
@@ -4133,6 +4264,7 @@ async def startup():
     asyncio.create_task(linkedin_health_check())
     asyncio.create_task(_temp_images_sweeper())
     asyncio.create_task(forza_clients_drive_sync())
+    asyncio.create_task(drive_bg_sync_loop())
     log.info("Mark v2 — Autonomous Marketing Brain — online")
 
 
