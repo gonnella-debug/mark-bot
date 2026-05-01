@@ -3435,6 +3435,96 @@ async def api_generate(request: Request, background_tasks: BackgroundTasks):
     return JSONResponse({"error": "Invalid request"}, status_code=400)
 
 
+@app.post("/v2/suggest_brand")
+async def api_v2_suggest_brand(request: Request, background_tasks: BackgroundTasks):
+    """Trigger Mark v2's send_brand_suggestion(brand) flow — used by Jarvis's
+    persistent-keyboard tap so GG can ask for a brand topic from the Jarvis
+    chat. The suggestion + inline buttons land in MARK's chat (callbacks must
+    come back to mark-bot), so Jarvis acks GG with a one-liner."""
+    body = await request.json()
+    token = (body.get("token") or request.headers.get("x-mark-token") or "").strip()
+    expected = os.getenv("MARK_INTERNAL_TOKEN", "")
+    if not expected or token != expected:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    brand = (body.get("brand") or "").strip()
+    if brand not in BRANDS:
+        return JSONResponse({"error": f"unknown brand: {brand}"}, status_code=400)
+    from mark_v2_brain import send_brand_suggestion
+    background_tasks.add_task(send_brand_suggestion, brand)
+    return {"status": "queued", "brand": brand}
+
+
+# ── GOOGLE DRIVE OAUTH (re-mint refresh token) ────────────────────────────────
+# When GDRIVE_REFRESH_TOKEN gets revoked (Google rotates them ~6 months,
+# or "Sign me out of all sessions" kills it), Drive uploads cascade-fail —
+# slide 1 can't get a public URL → IG/FB carousel breaks. This pair of
+# endpoints lets GG re-auth in 2 clicks instead of running gcloud locally.
+
+@app.get("/drive/auth")
+async def drive_auth_start():
+    if not GDRIVE_CLIENT_ID:
+        return JSONResponse({"error": "GDRIVE_CLIENT_ID not set"}, status_code=500)
+    redirect = f"{RAILWAY_URL.rstrip('/')}/drive/callback"
+    scope = "https://www.googleapis.com/auth/drive"
+    url = (
+        "https://accounts.google.com/o/oauth2/v2/auth"
+        f"?client_id={GDRIVE_CLIENT_ID}"
+        f"&redirect_uri={redirect}"
+        f"&response_type=code"
+        f"&scope={scope}"
+        f"&access_type=offline"
+        f"&prompt=consent"
+    )
+    return RedirectResponse(url)
+
+
+@app.get("/drive/callback")
+async def drive_auth_callback(code: str = None, error: str = None):
+    if error:
+        return JSONResponse({"error": error}, status_code=400)
+    if not code:
+        return JSONResponse({"error": "missing code"}, status_code=400)
+    redirect = f"{RAILWAY_URL.rstrip('/')}/drive/callback"
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "client_id": GDRIVE_CLIENT_ID,
+                    "client_secret": GDRIVE_CLIENT_SECRET,
+                    "code": code,
+                    "redirect_uri": redirect,
+                    "grant_type": "authorization_code",
+                },
+            )
+            tok = r.json()
+        rt = tok.get("refresh_token")
+        if not rt:
+            return JSONResponse(
+                {"error": "no refresh_token returned — revoke previous grant at https://myaccount.google.com/permissions and try again", "raw": tok},
+                status_code=400,
+            )
+        # Reset the in-memory access-token cache so the new refresh token gets used immediately.
+        _drive_token_cache["token"] = ""
+        _drive_token_cache["expires"] = 0
+        # Stash on disk too so a Railway redeploy can read it back.
+        try:
+            os.makedirs("/data", exist_ok=True)
+            with open("/data/gdrive_refresh_token.txt", "w") as f:
+                f.write(rt)
+        except Exception:
+            pass
+        await send_telegram(
+            "Drive re-auth complete. New refresh token captured.\n"
+            "Set this on Mark service env as `GDRIVE_REFRESH_TOKEN`:\n"
+            f"```\n{rt}\n```\n"
+            "Then redeploy. Stashed at `/data/gdrive_refresh_token.txt` as a backup."
+        )
+        return {"status": "ok", "refresh_token": rt, "next": "Set GDRIVE_REFRESH_TOKEN env var on Railway and redeploy."}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.post("/repost")
 async def api_repost(request: Request, background_tasks: BackgroundTasks):
     """Re-post the last rendered content for a brand to a subset of platforms — no re-render, no re-generation.
