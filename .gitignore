@@ -4,3 +4,4 @@ mark.pid
 templates/node_modules/
 __pycache__/
 *.log
+*.log
