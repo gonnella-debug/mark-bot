@@ -739,7 +739,11 @@ OUTPUT ALL FOUR BRANDS. Do not skip Forza."""
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-sonnet-4-20250514",
+                    # GG decision 2026-05-05: topic suggestion is internal
+                    # (GG reviews before turning into a post) — Haiku
+                    # sufficient. Final carousel/post generation calls in
+                    # this file stay on Sonnet.
+                    "model": "claude-haiku-4-5-20251001",
                     "max_tokens": 2048,
                     "system": SUGGESTION_SYSTEM_PROMPT,
                     "messages": [{"role": "user", "content": prompt}],

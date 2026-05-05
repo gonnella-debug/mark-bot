@@ -723,7 +723,11 @@ Keep responses SHORT — 2-3 sentences max. Talk like a human colleague."""
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-sonnet-4-20250514",
+                    # GG decision 2026-05-05: chat replies to operator are
+                    # internal — Haiku is sufficient. Customer-facing post
+                    # copy in content_brain.py / mark_bot_final.py stays on
+                    # Sonnet.
+                    "model": "claude-haiku-4-5-20251001",
                     "max_tokens": 1024,
                     "system": system,
                     "messages": _chat_history[-10:],
