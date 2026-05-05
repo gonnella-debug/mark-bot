@@ -4360,3 +4360,21 @@ async def forza_clients_drive_sync() -> None:
         except Exception as e:
             log.error(f"forza_clients_drive_sync loop error: {e}")
             await asyncio.sleep(3600)
+
+
+# ── Anthropic usage exposure (added 2026-05-05) ──
+# Surface /data/anthropic_usage.json so Jarvis morning brief can aggregate
+# per-service Claude call counts. Public read (call counts only — not
+# sensitive). Returns {} if the file doesn't exist yet (bot just deployed).
+@app.get("/admin/anthropic_usage", include_in_schema=False)
+def _admin_anthropic_usage():
+    try:
+        from pathlib import Path as _P
+        import json as _J
+        p = _P("/data/anthropic_usage.json")
+        if p.exists():
+            return _J.loads(p.read_text())
+    except Exception:
+        pass
+    return {}
+
