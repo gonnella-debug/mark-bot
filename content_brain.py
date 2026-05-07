@@ -257,10 +257,18 @@ CAROUSEL STRUCTURE (always 4 slides):
 - Slide 3: INSIGHT — deeper analysis + closing statement
 - Slide 4: CTA — call to action
 
+ARCHETYPE — pick ONE per post (drives the visual treatment):
+- "institutional" — the default house style. Dark, gold-accent, premium real-estate / private-bank tone. Use for routine market reports, fund-flow updates, neighborhood deep-dives, anything where you want continuity with prior posts.
+- "editorial" — luxury magazine layout. Cream/light backgrounds on inner slides, larger italic serif headlines, more whitespace, softer overlays. Use when the angle is human / lifestyle / narrative — investor profiles, "why Dubai" stories, design-led posts, anything Holdings-flavoured that wants to feel like a long-form piece.
+- "dashboard" — AI/operating-system aesthetic. Dark grid bg, monospace headlines, KPI cards, system-prompt CTA. Use for data-dense posts (Forza ops content, ListR data drops, hard numerics) where the message is "here are the numbers, professionally tracked".
+
+Pick deliberately. Rough guidance: 2× institutional → 1× editorial → 1× dashboard rotation across a brand keeps the feed visually varied. Don't pick the same archetype as your last post unless the topic genuinely demands it.
+
 OUTPUT FORMAT — return ONLY valid JSON, no markdown:
 {
   "brand": "nucassa_re",
   "topic_summary": "one line describing the angle",
+  "archetype": "institutional",
   "caption": "Instagram caption text (include hashtags)",
   "slides": [
     {"type": "cover", "headline_top": "...", "headline_gold": "...", "headline_bottom": "..."},

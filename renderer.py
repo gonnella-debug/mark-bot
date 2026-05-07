@@ -186,6 +186,790 @@ def _stripe_bg_html():
     return '<div class="stripe-bg"></div><div class="streak1"></div><div class="streak2"></div>'
 
 
+# ── Archetype system (Phase 1) ──────────────────────────────────────
+# Three archetypes; institutional is the existing render path (default,
+# byte-identical to pre-archetype output). Editorial = luxury magazine
+# (larger headlines, narrower column, softer overlays, optional cream
+# panels). Dashboard = AI/ops operating-system aesthetic (dark grid bg,
+# mono headlines, KPI cards, system-prompt CTA).
+#
+# Forza is left on its own visual track in Phase 1 — generate_forza_*
+# functions remain unchanged. The archetype parameter on the public
+# generators only affects the non-Forza brand paths.
+
+ARCHETYPES = ("institutional", "editorial", "dashboard")
+
+
+def _coerce_archetype(value: str | None) -> str:
+    """Normalise + validate. Unknown values fall back to institutional
+    (the safe default). Forward-compat: if Claude ever ships an
+    archetype name we haven't wired yet, the post still renders."""
+    v = (value or "").strip().lower()
+    return v if v in ARCHETYPES else "institutional"
+
+
+def _editorial_font_imports() -> str:
+    return (
+        "@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:"
+        "wght@500;700;800&family=Inter:wght@400;500;600&display=swap');"
+    )
+
+
+def _dashboard_font_imports() -> str:
+    return (
+        "@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:"
+        "wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');"
+    )
+
+
+def _grid_bg_css() -> str:
+    """Subtle 40px grid mesh — used by every dashboard slide."""
+    return """
+    .grid-bg {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background-color: #0d1117;
+        background-image:
+            linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+        background-size: 40px 40px;
+    }
+    .grid-vignette {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: radial-gradient(circle at center, transparent 40%, rgba(0,0,0,0.6) 100%);
+    }
+    """
+
+
+def _grid_bg_html() -> str:
+    return '<div class="grid-bg"></div><div class="grid-vignette"></div>'
+
+
+def _cream_bg_css() -> str:
+    """Warm cream panel — used by editorial data + insight slides."""
+    return """
+    .cream-bg {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: linear-gradient(180deg, #f8f3eb 0%, #efe6d6 100%);
+    }
+    .cream-grain {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: radial-gradient(ellipse at top, rgba(201,160,108,0.05) 0%, transparent 60%);
+    }
+    """
+
+
+def _cream_bg_html() -> str:
+    return '<div class="cream-bg"></div><div class="cream-grain"></div>'
+
+
+def _page_label_html(page_no: str = "01", total: str = "04") -> str:
+    """Tactical page indicator for dashboard archetype — top-right corner."""
+    return f'<div class="page-label">{page_no} / {total}</div>'
+
+
+# ── EDITORIAL archetype ─────────────────────────────────────────────
+
+def _cover_editorial(headline_top, headline_gold, headline_bottom,
+                     bg_image, logo_path, accent_color):
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    {_editorial_font_imports()}
+    {_base_css()}
+    body {{ font-family: 'Inter', sans-serif; }}
+    .bg-image {{
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background-image: url('{_file_to_data_uri(bg_image)}');
+        background-size: cover; background-position: center;
+        filter: brightness(0.55) saturate(0.9);
+    }}
+    .gradient-overlay {{
+        position: absolute; bottom: 0; left: 0; width: 100%; height: 70%;
+        background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.35) 50%, transparent 100%);
+    }}
+    .hairline-top {{
+        position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+        width: 60px; height: 1px; background: rgba(255,255,255,0.45);
+    }}
+    .logo-watermark {{
+        position: absolute; top: 90px; left: 50%; transform: translateX(-50%);
+        width: 64px; opacity: 0.35;
+    }}
+    .content {{
+        position: absolute; bottom: 0; left: 0; width: 100%;
+        padding: 0 140px 130px; text-align: center; z-index: 10;
+        max-width: 880px; margin: 0 auto; left: 50%; transform: translateX(-50%);
+    }}
+    .headline-small {{
+        font-family: 'Inter', sans-serif;
+        font-size: 18px; font-weight: 500; color: rgba(255,255,255,0.78);
+        text-transform: uppercase; letter-spacing: 6px; line-height: 1.2; margin-bottom: 32px;
+    }}
+    .headline-big {{
+        font-family: 'Playfair Display', serif;
+        font-size: 72px; font-weight: 700; font-style: italic;
+        color: {accent_color};
+        letter-spacing: -1px; line-height: 1.05; margin-bottom: 28px;
+    }}
+    .headline-sub {{
+        font-family: 'Playfair Display', serif;
+        font-size: 32px; font-weight: 500; color: rgba(255,255,255,0.92);
+        letter-spacing: 0; line-height: 1.25;
+    }}
+    .swipe-mark {{
+        position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+        font-family: 'Inter', sans-serif;
+        font-size: 11px; font-weight: 500; color: rgba(255,255,255,0.55);
+        letter-spacing: 4px; text-transform: uppercase;
+    }}
+    </style></head><body>
+    <div class="slide">
+        <div class="bg-image"></div>
+        <div class="gradient-overlay"></div>
+        <div class="hairline-top"></div>
+        <img class="logo-watermark" src="{_file_to_data_uri(logo_path)}" alt="">
+        <div class="content">
+            <div class="headline-small">{headline_top}</div>
+            <div class="headline-big">{headline_gold}</div>
+            <div class="headline-sub">{headline_bottom}</div>
+        </div>
+        <div class="swipe-mark">Continue —</div>
+    </div></body></html>"""
+
+
+def _data_editorial(headline_gold, headline_white, bullets, logo_path, accent_color):
+    bullet_html = "\n".join(
+        f'<li>{b}</li>' for b in bullets
+    )
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    {_editorial_font_imports()}
+    {_base_css()}
+    {_cream_bg_css()}
+    body {{ font-family: 'Inter', sans-serif; }}
+    .content {{
+        position: relative; z-index: 10;
+        padding: 130px 160px;
+        height: 100%; display: flex; flex-direction: column; justify-content: center;
+        text-align: center;
+    }}
+    .eyebrow {{
+        font-family: 'Inter', sans-serif;
+        font-size: 14px; font-weight: 500; color: {accent_color};
+        text-transform: uppercase; letter-spacing: 5px; margin-bottom: 26px;
+    }}
+    .headline {{
+        font-family: 'Playfair Display', serif;
+        font-size: 56px; font-weight: 700; color: #1a1a1a;
+        line-height: 1.1; margin-bottom: 18px;
+    }}
+    .headline-em {{
+        font-family: 'Playfair Display', serif; font-style: italic;
+        font-size: 56px; font-weight: 700; color: {accent_color};
+        line-height: 1.1; margin-bottom: 50px;
+    }}
+    .stats {{
+        list-style: none; display: flex; flex-direction: column; gap: 22px;
+        max-width: 720px; margin: 0 auto; text-align: center;
+    }}
+    .stats li {{
+        font-family: 'Playfair Display', serif;
+        font-size: 26px; font-weight: 500; color: #2a2a2a;
+        line-height: 1.45; padding-bottom: 22px;
+        border-bottom: 1px solid rgba(26,26,26,0.12);
+    }}
+    .stats li:last-child {{ border-bottom: none; }}
+    .stat-highlight {{ color: {accent_color}; font-weight: 700; font-style: italic; }}
+    .logo-bottom {{
+        position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+        width: 56px; opacity: 0.3; filter: brightness(0.3);
+    }}
+    </style></head><body>
+    <div class="slide">
+        {_cream_bg_html()}
+        <div class="content">
+            <div class="eyebrow">{headline_gold}</div>
+            <div class="headline-em">{headline_white}</div>
+            <ul class="stats">{bullet_html}</ul>
+        </div>
+        <img class="logo-bottom" src="{_file_to_data_uri(logo_path)}" alt="">
+    </div></body></html>"""
+
+
+def _insight_editorial(headline_gold, headline_white, bullets,
+                       closing_white, closing_gold, logo_path, accent_color):
+    bullet_html = "\n".join(f'<li>{b}</li>' for b in bullets)
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    {_editorial_font_imports()}
+    {_base_css()}
+    {_cream_bg_css()}
+    body {{ font-family: 'Inter', sans-serif; }}
+    .content {{
+        position: relative; z-index: 10;
+        padding: 110px 160px 130px;
+        height: 100%; display: flex; flex-direction: column; justify-content: center;
+        text-align: center;
+    }}
+    .eyebrow {{
+        font-family: 'Inter', sans-serif;
+        font-size: 13px; font-weight: 500; color: {accent_color};
+        text-transform: uppercase; letter-spacing: 5px; margin-bottom: 22px;
+    }}
+    .headline {{
+        font-family: 'Playfair Display', serif;
+        font-size: 50px; font-weight: 700; color: #1a1a1a;
+        line-height: 1.12; margin-bottom: 36px;
+    }}
+    .stats {{
+        list-style: none; display: flex; flex-direction: column; gap: 18px;
+        max-width: 700px; margin: 0 auto 48px; text-align: center;
+    }}
+    .stats li {{
+        font-family: 'Playfair Display', serif;
+        font-size: 24px; font-weight: 500; color: #2a2a2a; line-height: 1.45;
+    }}
+    .stat-highlight {{ color: {accent_color}; font-weight: 700; font-style: italic; }}
+    .divider {{
+        width: 60px; height: 1px; background: {accent_color};
+        margin: 0 auto 36px;
+    }}
+    .closing {{
+        font-family: 'Playfair Display', serif; font-style: italic;
+        font-size: 36px; font-weight: 500; color: #1a1a1a;
+        line-height: 1.35; max-width: 760px; margin: 0 auto 8px;
+    }}
+    .closing-em {{
+        font-family: 'Playfair Display', serif; font-style: italic;
+        font-size: 36px; font-weight: 700; color: {accent_color};
+        line-height: 1.35; max-width: 760px; margin: 0 auto;
+    }}
+    .logo-bottom {{
+        position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+        width: 56px; opacity: 0.3; filter: brightness(0.3);
+    }}
+    </style></head><body>
+    <div class="slide">
+        {_cream_bg_html()}
+        <div class="content">
+            <div class="eyebrow">{headline_gold}</div>
+            <div class="headline">{headline_white}</div>
+            <ul class="stats">{bullet_html}</ul>
+            <div class="divider"></div>
+            <div class="closing">{closing_white}</div>
+            <div class="closing-em">{closing_gold}</div>
+        </div>
+        <img class="logo-bottom" src="{_file_to_data_uri(logo_path)}" alt="">
+    </div></body></html>"""
+
+
+def _photo_data_editorial(headline_gold, headline_white, bullets,
+                          bg_image, logo_path, accent_color):
+    bullet_html = "\n".join(f'<li>{b}</li>' for b in bullets)
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    {_editorial_font_imports()}
+    {_base_css()}
+    body {{ font-family: 'Inter', sans-serif; }}
+    .photo-half {{
+        position: absolute; top: 0; left: 0; width: 100%; height: 50%;
+        background-image: url('{_file_to_data_uri(bg_image)}');
+        background-size: cover; background-position: center;
+        filter: brightness(0.7) saturate(0.85);
+    }}
+    .photo-fade {{
+        position: absolute; top: 0; left: 0; width: 100%; height: 50%;
+        background: linear-gradient(to bottom, transparent 70%, #f8f3eb 100%);
+    }}
+    .cream-half {{
+        position: absolute; bottom: 0; left: 0; width: 100%; height: 50%;
+        background: linear-gradient(180deg, #f8f3eb 0%, #efe6d6 100%);
+    }}
+    .content {{
+        position: absolute; bottom: 0; left: 0; width: 100%; height: 50%;
+        padding: 60px 140px 80px; text-align: center; z-index: 10;
+        display: flex; flex-direction: column; justify-content: center;
+    }}
+    .eyebrow {{
+        font-family: 'Inter', sans-serif;
+        font-size: 13px; font-weight: 500; color: {accent_color};
+        text-transform: uppercase; letter-spacing: 5px; margin-bottom: 16px;
+    }}
+    .headline {{
+        font-family: 'Playfair Display', serif;
+        font-size: 38px; font-weight: 700; color: #1a1a1a;
+        line-height: 1.15; margin-bottom: 28px;
+    }}
+    .stats {{
+        list-style: none; display: flex; flex-direction: column; gap: 14px;
+        max-width: 720px; margin: 0 auto;
+    }}
+    .stats li {{
+        font-family: 'Playfair Display', serif;
+        font-size: 22px; font-weight: 500; color: #2a2a2a; line-height: 1.4;
+    }}
+    .stat-highlight {{ color: {accent_color}; font-weight: 700; font-style: italic; }}
+    .logo-watermark {{
+        position: absolute; top: 25%; left: 50%; transform: translate(-50%, -50%);
+        width: 90px; opacity: 0.25;
+    }}
+    </style></head><body>
+    <div class="slide">
+        <div class="photo-half"></div>
+        <div class="cream-half"></div>
+        <div class="photo-fade"></div>
+        <img class="logo-watermark" src="{_file_to_data_uri(logo_path)}" alt="">
+        <div class="content">
+            <div class="eyebrow">{headline_gold}</div>
+            <div class="headline">{headline_white}</div>
+            <ul class="stats">{bullet_html}</ul>
+        </div>
+    </div></body></html>"""
+
+
+def _cta_editorial(cta_text, brand_name, logo_path, accent_color):
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    {_editorial_font_imports()}
+    {_base_css()}
+    body {{ font-family: 'Inter', sans-serif; background: #0a0a0a; }}
+    .slide {{
+        width: 1080px; height: 1080px; position: relative;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 50px;
+    }}
+    .rule-top {{ width: 80px; height: 1px; background: {accent_color}; }}
+    .cta-text {{
+        font-family: 'Playfair Display', serif; font-style: italic;
+        font-size: 56px; font-weight: 500; color: #ffffff;
+        text-align: center; line-height: 1.25; padding: 0 140px;
+        max-width: 900px; letter-spacing: -0.5px;
+    }}
+    .rule-bottom {{ width: 80px; height: 1px; background: {accent_color}; }}
+    .logo-center {{ width: 90px; opacity: 0.85; }}
+    .brand-name {{
+        font-family: 'Inter', sans-serif;
+        font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.7);
+        text-transform: uppercase; letter-spacing: 8px;
+    }}
+    </style></head><body>
+    <div class="slide">
+        <div class="rule-top"></div>
+        <div class="cta-text">{cta_text}</div>
+        <div class="rule-bottom"></div>
+        <img class="logo-center" src="{_file_to_data_uri(logo_path)}" alt="">
+        <div class="brand-name">{brand_name}</div>
+    </div></body></html>"""
+
+
+# ── DASHBOARD archetype ─────────────────────────────────────────────
+
+def _cover_dashboard(headline_top, headline_gold, headline_bottom,
+                     bg_image, logo_path, accent_color):
+    # Note: bg_image intentionally unused — dashboard is a pure-grid look.
+    _ = bg_image
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    {_dashboard_font_imports()}
+    {_base_css()}
+    {_grid_bg_css()}
+    body {{ font-family: 'Inter', sans-serif; background: #0d1117; }}
+    .page-label {{
+        position: absolute; top: 50px; right: 50px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.55);
+        letter-spacing: 3px;
+    }}
+    .status-strip {{
+        position: absolute; top: 50px; left: 50px;
+        display: flex; align-items: center; gap: 12px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px; font-weight: 500; color: {accent_color};
+        letter-spacing: 3px; text-transform: uppercase;
+    }}
+    .status-dot {{ width: 8px; height: 8px; background: {accent_color}; border-radius: 50%; }}
+    .content {{
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        width: 100%; padding: 0 100px; text-align: left; z-index: 10;
+    }}
+    .label {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.6);
+        letter-spacing: 5px; text-transform: uppercase; margin-bottom: 36px;
+    }}
+    .headline-mono {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 22px; font-weight: 600; color: rgba(255,255,255,0.85);
+        text-transform: uppercase; letter-spacing: 2px; line-height: 1.3; margin-bottom: 14px;
+    }}
+    .headline-big {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 64px; font-weight: 700; color: {accent_color};
+        text-transform: uppercase; letter-spacing: -1px; line-height: 1.05; margin-bottom: 14px;
+        text-shadow: 0 0 30px rgba(201,160,108,0.25);
+    }}
+    .headline-sub {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 22px; font-weight: 500; color: rgba(255,255,255,0.75);
+        text-transform: uppercase; letter-spacing: 2px; line-height: 1.3;
+    }}
+    .footer-strip {{
+        position: absolute; bottom: 50px; left: 50px; right: 50px;
+        display: flex; justify-content: space-between; align-items: center;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px; color: rgba(255,255,255,0.5);
+        letter-spacing: 3px; text-transform: uppercase;
+        border-top: 1px solid rgba(255,255,255,0.12); padding-top: 20px;
+    }}
+    .corner-mark {{
+        position: absolute; bottom: 130px; right: 50px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 14px; font-weight: 600; color: {accent_color};
+        letter-spacing: 3px;
+    }}
+    </style></head><body>
+    <div class="slide">
+        {_grid_bg_html()}
+        <div class="status-strip"><div class="status-dot"></div>OPERATIONAL</div>
+        {_page_label_html("01", "04")}
+        <div class="content">
+            <div class="label">{headline_top}</div>
+            <div class="headline-big">{headline_gold}</div>
+            <div class="headline-sub">{headline_bottom}</div>
+        </div>
+        <div class="corner-mark">→ NEXT</div>
+        <div class="footer-strip">
+            <span>SYS / READY</span>
+            <span>v1</span>
+        </div>
+    </div></body></html>"""
+
+
+def _data_dashboard(headline_gold, headline_white, bullets, logo_path, accent_color):
+    # Render each bullet as a KPI card. We try to split "<value> · <label>"
+    # patterns (or "<NUMBER>% <REST>" patterns) into a value + label split;
+    # otherwise the whole bullet renders as a single body line in the card.
+    import re as _re
+    cards = []
+    for b in bullets:
+        value, label = "", b
+        # Pattern A: stat-highlight span — extract its inner text as the value.
+        m = _re.search(r'<span class="stat-highlight">(.*?)</span>(.*)', b, flags=_re.S)
+        if m:
+            value = m.group(1).strip()
+            label = m.group(2).strip().lstrip("·-:– ").strip()
+            # Strip any leftover html if present (from stray tags) — defensive.
+            label = _re.sub(r'<[^>]+>', '', label).strip()
+        else:
+            # Pattern B: leading number / percentage / dollar value at start.
+            m2 = _re.match(r'^([\$€£]?\d[\d.,]*\s*[%kKMB]?)\s+(.*)$', b)
+            if m2:
+                value = m2.group(1).strip()
+                label = m2.group(2).strip()
+        if not value:
+            cards.append(f'<div class="kpi-card kpi-prose">{b}</div>')
+        else:
+            cards.append(
+                f'<div class="kpi-card">'
+                f'<div class="kpi-value">{value}</div>'
+                f'<div class="kpi-label">{label or ""}</div>'
+                f'</div>'
+            )
+    cards_html = "\n".join(cards)
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    {_dashboard_font_imports()}
+    {_base_css()}
+    {_grid_bg_css()}
+    body {{ font-family: 'Inter', sans-serif; background: #0d1117; }}
+    .page-label {{
+        position: absolute; top: 50px; right: 50px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 14px; color: rgba(255,255,255,0.55); letter-spacing: 3px;
+    }}
+    .header {{
+        position: absolute; top: 110px; left: 0; width: 100%; padding: 0 80px; text-align: center;
+    }}
+    .label {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 13px; color: {accent_color};
+        letter-spacing: 5px; text-transform: uppercase; margin-bottom: 18px;
+    }}
+    .headline {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 38px; font-weight: 700; color: #ffffff;
+        text-transform: uppercase; letter-spacing: -0.5px; line-height: 1.15;
+    }}
+    .grid {{
+        position: absolute; top: 360px; left: 0; right: 0; bottom: 140px;
+        padding: 0 80px;
+        display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 24px;
+    }}
+    .kpi-card {{
+        border: 1px solid rgba(201,160,108,0.4);
+        background: rgba(255,255,255,0.025);
+        padding: 30px 28px; display: flex; flex-direction: column;
+        justify-content: center; align-items: flex-start; min-height: 0;
+    }}
+    .kpi-value {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 50px; font-weight: 700; color: {accent_color};
+        line-height: 1.0; margin-bottom: 14px;
+    }}
+    .kpi-label {{
+        font-family: 'Inter', sans-serif;
+        font-size: 16px; font-weight: 500; color: rgba(255,255,255,0.78);
+        line-height: 1.35;
+    }}
+    .kpi-prose {{
+        font-family: 'Inter', sans-serif;
+        font-size: 19px; font-weight: 500; color: rgba(255,255,255,0.85);
+        line-height: 1.4;
+    }}
+    .stat-highlight {{ color: {accent_color}; font-weight: 700; }}
+    .footer-strip {{
+        position: absolute; bottom: 50px; left: 50px; right: 50px;
+        display: flex; justify-content: space-between;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px; color: rgba(255,255,255,0.5); letter-spacing: 3px;
+        border-top: 1px solid rgba(255,255,255,0.12); padding-top: 20px;
+    }}
+    </style></head><body>
+    <div class="slide">
+        {_grid_bg_html()}
+        {_page_label_html("02", "04")}
+        <div class="header">
+            <div class="label">{headline_gold}</div>
+            <div class="headline">{headline_white}</div>
+        </div>
+        <div class="grid">{cards_html}</div>
+        <div class="footer-strip">
+            <span>METRICS / TODAY</span>
+            <span>02 / 04</span>
+        </div>
+    </div></body></html>"""
+
+
+def _insight_dashboard(headline_gold, headline_white, bullets,
+                       closing_white, closing_gold, logo_path, accent_color):
+    bullet_html = "\n".join(f'<li><span class="bullet-dot">{accent_color and "■"}</span>{b}</li>' for b in bullets)
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    {_dashboard_font_imports()}
+    {_base_css()}
+    {_grid_bg_css()}
+    body {{ font-family: 'Inter', sans-serif; background: #0d1117; }}
+    .page-label {{
+        position: absolute; top: 50px; right: 50px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 14px; color: rgba(255,255,255,0.55); letter-spacing: 3px;
+    }}
+    .content {{
+        position: absolute; top: 110px; left: 0; right: 0; bottom: 110px;
+        padding: 0 90px;
+        display: flex; flex-direction: column; justify-content: flex-start;
+    }}
+    .label {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 13px; color: {accent_color};
+        letter-spacing: 5px; text-transform: uppercase; margin-bottom: 22px;
+    }}
+    .headline {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 38px; font-weight: 700; color: #ffffff;
+        line-height: 1.15; margin-bottom: 50px;
+    }}
+    ul.stats {{
+        list-style: none; display: flex; flex-direction: column; gap: 18px; margin-bottom: 50px;
+    }}
+    ul.stats li {{
+        font-family: 'Inter', sans-serif;
+        font-size: 22px; font-weight: 500; color: rgba(255,255,255,0.88);
+        line-height: 1.45; padding-left: 32px; position: relative;
+    }}
+    .bullet-dot {{
+        position: absolute; left: 0; top: 8px; width: 14px; height: 14px;
+        background: {accent_color}; display: inline-block;
+        text-indent: -9999px;
+    }}
+    .system-note {{
+        margin-top: auto;
+        background: rgba(201,160,108,0.06);
+        border-left: 3px solid {accent_color};
+        padding: 22px 28px;
+    }}
+    .system-note-prefix {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px; color: {accent_color};
+        letter-spacing: 4px; text-transform: uppercase; margin-bottom: 10px;
+    }}
+    .system-note-line {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 22px; font-weight: 500; color: #ffffff;
+        line-height: 1.4;
+    }}
+    .system-note-em {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 22px; font-weight: 700; color: {accent_color};
+        line-height: 1.4;
+    }}
+    .stat-highlight {{ color: {accent_color}; font-weight: 700; }}
+    .footer-strip {{
+        position: absolute; bottom: 50px; left: 50px; right: 50px;
+        display: flex; justify-content: space-between;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px; color: rgba(255,255,255,0.5); letter-spacing: 3px;
+        border-top: 1px solid rgba(255,255,255,0.12); padding-top: 20px;
+    }}
+    </style></head><body>
+    <div class="slide">
+        {_grid_bg_html()}
+        {_page_label_html("03", "04")}
+        <div class="content">
+            <div class="label">{headline_gold}</div>
+            <div class="headline">{headline_white}</div>
+            <ul class="stats">{bullet_html}</ul>
+            <div class="system-note">
+                <div class="system-note-prefix">// SYSTEM NOTE</div>
+                <div class="system-note-line">{closing_white}</div>
+                <div class="system-note-em">{closing_gold}</div>
+            </div>
+        </div>
+        <div class="footer-strip">
+            <span>ANALYSIS / 24h</span>
+            <span>03 / 04</span>
+        </div>
+    </div></body></html>"""
+
+
+def _photo_data_dashboard(headline_gold, headline_white, bullets,
+                          bg_image, logo_path, accent_color):
+    bullet_html = "\n".join(f'<div class="kpi-strip">{b}</div>' for b in bullets)
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    {_dashboard_font_imports()}
+    {_base_css()}
+    body {{ font-family: 'Inter', sans-serif; background: #0d1117; }}
+    .bg-image {{
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background-image: url('{_file_to_data_uri(bg_image)}');
+        background-size: cover; background-position: center;
+        filter: brightness(0.4) saturate(0.7);
+    }}
+    .grid-mesh {{
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background-image:
+            linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+        background-size: 40px 40px;
+        mix-blend-mode: screen;
+    }}
+    .page-label {{
+        position: absolute; top: 50px; right: 50px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 14px; color: rgba(255,255,255,0.7); letter-spacing: 3px;
+    }}
+    .content {{
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        width: 100%; padding: 0 100px; text-align: left; z-index: 10;
+    }}
+    .label {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 13px; color: {accent_color};
+        letter-spacing: 5px; text-transform: uppercase; margin-bottom: 22px;
+    }}
+    .headline {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 42px; font-weight: 700; color: #ffffff;
+        line-height: 1.15; margin-bottom: 44px;
+    }}
+    .kpi-strip {{
+        font-family: 'Inter', sans-serif;
+        font-size: 19px; font-weight: 500; color: rgba(255,255,255,0.92);
+        line-height: 1.4; padding: 14px 22px;
+        border-left: 2px solid {accent_color};
+        background: rgba(13,17,23,0.55);
+        backdrop-filter: blur(6px); margin-bottom: 12px;
+    }}
+    .stat-highlight {{ color: {accent_color}; font-weight: 700; }}
+    .footer-strip {{
+        position: absolute; bottom: 50px; left: 50px; right: 50px;
+        display: flex; justify-content: space-between;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px; color: rgba(255,255,255,0.7); letter-spacing: 3px;
+        border-top: 1px solid rgba(255,255,255,0.18); padding-top: 20px;
+    }}
+    </style></head><body>
+    <div class="slide">
+        <div class="bg-image"></div>
+        <div class="grid-mesh"></div>
+        {_page_label_html("02", "04")}
+        <div class="content">
+            <div class="label">{headline_gold}</div>
+            <div class="headline">{headline_white}</div>
+            {bullet_html}
+        </div>
+        <div class="footer-strip">
+            <span>FIELD / LIVE</span>
+            <span>02 / 04</span>
+        </div>
+    </div></body></html>"""
+
+
+def _cta_dashboard(cta_text, brand_name, logo_path, accent_color):
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    {_dashboard_font_imports()}
+    {_base_css()}
+    {_grid_bg_css()}
+    body {{ font-family: 'IBM Plex Mono', monospace; background: #0d1117; }}
+    .page-label {{
+        position: absolute; top: 50px; right: 50px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 14px; color: rgba(255,255,255,0.55); letter-spacing: 3px;
+    }}
+    .terminal {{
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        width: 100%; padding: 0 110px; text-align: left;
+    }}
+    .prompt-line {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 14px; color: {accent_color};
+        letter-spacing: 4px; text-transform: uppercase; margin-bottom: 32px;
+    }}
+    .cta-text {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 40px; font-weight: 700; color: #ffffff;
+        line-height: 1.3; letter-spacing: -0.5px;
+    }}
+    .cta-text::before {{ content: '> '; color: {accent_color}; }}
+    .cursor {{
+        display: inline-block; width: 18px; height: 38px;
+        background: {accent_color}; vertical-align: -4px;
+        margin-left: 6px; animation: blink 1s steps(2) infinite;
+    }}
+    @keyframes blink {{ 50% {{ opacity: 0; }} }}
+    .signature {{
+        position: absolute; bottom: 80px; left: 0; right: 0;
+        text-align: center;
+    }}
+    .brand-line {{
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.6);
+        text-transform: uppercase; letter-spacing: 6px;
+    }}
+    .footer-strip {{
+        position: absolute; bottom: 30px; left: 50px; right: 50px;
+        display: flex; justify-content: space-between;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 12px; color: rgba(255,255,255,0.4); letter-spacing: 3px;
+    }}
+    </style></head><body>
+    <div class="slide">
+        {_grid_bg_html()}
+        {_page_label_html("04", "04")}
+        <div class="terminal">
+            <div class="prompt-line">// CALL TO ACTION</div>
+            <div class="cta-text">{cta_text}<span class="cursor"></span></div>
+        </div>
+        <div class="signature">
+            <div class="brand-line">{brand_name}</div>
+        </div>
+        <div class="footer-strip">
+            <span>END / TRANSMISSION</span>
+            <span>04 / 04</span>
+        </div>
+    </div></body></html>"""
+
+
 def _forza_cover_blueprint(headline_top: str, headline_gold: str, headline_bottom: str,
                             logo_path: str, accent_color: str = "#C5A86C",
                             bg_image: str = "") -> str:
@@ -915,8 +1699,18 @@ def generate_forza_cta_slide(cta_text: str, accent_color: str = "#C5A86C") -> st
 
 
 def generate_cover_slide(headline_top: str, headline_gold: str, headline_bottom: str,
-                         bg_image: str, logo_path: str, accent_color: str = "#C9A06C") -> str:
-    """Cover slide — dramatic background, headline, logo top-left, swipe arrow."""
+                         bg_image: str, logo_path: str, accent_color: str = "#C9A06C",
+                         archetype: str = "institutional") -> str:
+    """Cover slide — dramatic background, headline, logo top-left, swipe arrow.
+    archetype switches the visual treatment; institutional is the original look
+    (unchanged for backward compat)."""
+    a = _coerce_archetype(archetype)
+    if a == "editorial":
+        return _cover_editorial(headline_top, headline_gold, headline_bottom,
+                                bg_image, logo_path, accent_color)
+    if a == "dashboard":
+        return _cover_dashboard(headline_top, headline_gold, headline_bottom,
+                                bg_image, logo_path, accent_color)
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
     {_base_css()}
     .bg-image {{
@@ -972,8 +1766,17 @@ def generate_cover_slide(headline_top: str, headline_gold: str, headline_bottom:
 
 
 def generate_data_slide(headline_gold: str, headline_white: str, bullets: list[str],
-                        logo_path: str, accent_color: str = "#C9A06C") -> str:
-    """Data/stats slide — dark bg with stripes, bullet points centered."""
+                        logo_path: str, accent_color: str = "#C9A06C",
+                        archetype: str = "institutional") -> str:
+    """Data/stats slide — dark bg with stripes, bullet points centered.
+    archetype switches the visual treatment; institutional is the original."""
+    a = _coerce_archetype(archetype)
+    if a == "editorial":
+        return _data_editorial(headline_gold, headline_white, bullets,
+                               logo_path, accent_color)
+    if a == "dashboard":
+        return _data_dashboard(headline_gold, headline_white, bullets,
+                               logo_path, accent_color)
     bullet_html = "\n".join(
         f'<div class="stat-text"><span class="bullet">&bull;</span> {b}</div>'
         for b in bullets
@@ -1022,8 +1825,19 @@ def generate_data_slide(headline_gold: str, headline_white: str, bullets: list[s
 
 def generate_insight_slide(headline_gold: str, headline_white: str, bullets: list[str],
                            closing_white: str, closing_gold: str,
-                           logo_path: str, accent_color: str = "#C9A06C") -> str:
-    """Insight slide — data + closing statement with divider."""
+                           logo_path: str, accent_color: str = "#C9A06C",
+                           archetype: str = "institutional") -> str:
+    """Insight slide — data + closing statement with divider.
+    archetype switches the visual treatment; institutional is the original."""
+    a = _coerce_archetype(archetype)
+    if a == "editorial":
+        return _insight_editorial(headline_gold, headline_white, bullets,
+                                  closing_white, closing_gold,
+                                  logo_path, accent_color)
+    if a == "dashboard":
+        return _insight_dashboard(headline_gold, headline_white, bullets,
+                                  closing_white, closing_gold,
+                                  logo_path, accent_color)
     bullet_html = "\n".join(
         f'<div class="stat-text"><span class="bullet">&bull;</span> {b}</div>'
         for b in bullets
@@ -1076,8 +1890,17 @@ def generate_insight_slide(headline_gold: str, headline_white: str, bullets: lis
 
 
 def generate_photo_data_slide(headline_gold: str, headline_white: str, bullets: list[str],
-                              bg_image: str, logo_path: str, accent_color: str = "#C9A06C") -> str:
-    """Photo background + data overlay — image top half, text bottom half."""
+                              bg_image: str, logo_path: str, accent_color: str = "#C9A06C",
+                              archetype: str = "institutional") -> str:
+    """Photo background + data overlay — image top half, text bottom half.
+    archetype switches the visual treatment; institutional is the original."""
+    a = _coerce_archetype(archetype)
+    if a == "editorial":
+        return _photo_data_editorial(headline_gold, headline_white, bullets,
+                                     bg_image, logo_path, accent_color)
+    if a == "dashboard":
+        return _photo_data_dashboard(headline_gold, headline_white, bullets,
+                                     bg_image, logo_path, accent_color)
     bullet_html = "\n".join(
         f'<div class="stat-text"><span class="bullet">&bull;</span> {b}</div>'
         for b in bullets
@@ -1132,8 +1955,15 @@ def generate_photo_data_slide(headline_gold: str, headline_white: str, bullets: 
 
 
 def generate_cta_slide(cta_text: str, brand_name: str, logo_path: str,
-                       accent_color: str = "#C9A06C") -> str:
-    """CTA slide — black background, centered text + logo."""
+                       accent_color: str = "#C9A06C",
+                       archetype: str = "institutional") -> str:
+    """CTA slide — black background, centered text + logo.
+    archetype switches the visual treatment; institutional is the original."""
+    a = _coerce_archetype(archetype)
+    if a == "editorial":
+        return _cta_editorial(cta_text, brand_name, logo_path, accent_color)
+    if a == "dashboard":
+        return _cta_dashboard(cta_text, brand_name, logo_path, accent_color)
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
     {_base_css()}
     .slide {{
@@ -1188,7 +2018,8 @@ async def render_html_to_png(html_content: str, output_path: str) -> bool:
 
 async def render_carousel(slides_content: list[dict], brand: str,
                            exclude_backgrounds: list[str] | None = None,
-                           exclude_forza_variants: list[str] | None = None) -> tuple[list[bytes], dict]:
+                           exclude_forza_variants: list[str] | None = None,
+                           archetype: str = "institutional") -> tuple[list[bytes], dict]:
     """
     Render a full carousel from structured content.
 
@@ -1200,7 +2031,14 @@ async def render_carousel(slides_content: list[dict], brand: str,
         {"type": "photo_data", "headline_gold": "...", "headline_white": "...", "bullets": [...]},
         {"type": "cta", "cta_text": "...", "brand_name": "..."},
     ]
+
+    archetype: one of "institutional" (default — current visual identity),
+    "editorial" (luxury magazine), or "dashboard" (AI/ops grid). Unknown
+    values fall back to institutional. The Forza brand is intentionally
+    kept on its own visual track in Phase 1 — its 4 cover variants and
+    dedicated CTA are unaffected by archetype.
     """
+    archetype = _coerce_archetype(archetype)
     from playwright.async_api import async_playwright
 
     _init_backgrounds()
@@ -1297,25 +2135,25 @@ async def render_carousel(slides_content: list[dict], brand: str,
                         visuals_used["backgrounds"].append(bg)
                     html = generate_cover_slide(
                         slide["headline_top"], slide["headline_gold"], slide.get("headline_bottom", ""),
-                        bg, logo_path, accent
+                        bg, logo_path, accent, archetype=archetype,
                     )
             elif slide_type == "data":
                 html = generate_data_slide(
                     slide["headline_gold"], slide["headline_white"], slide["bullets"],
-                    logo_path, accent
+                    logo_path, accent, archetype=archetype,
                 )
             elif slide_type == "insight":
                 html = generate_insight_slide(
                     slide["headline_gold"], slide["headline_white"], slide["bullets"],
                     slide.get("closing_white", ""), slide.get("closing_gold", ""),
-                    logo_path, accent
+                    logo_path, accent, archetype=archetype,
                 )
             elif slide_type == "photo_data":
                 if is_forza:
                     # Forza has no photo variant — degrade to data slide, keeps type contract.
                     html = generate_data_slide(
                         slide["headline_gold"], slide["headline_white"], slide["bullets"],
-                        logo_path, accent
+                        logo_path, accent, archetype=archetype,
                     )
                 else:
                     # Dedup against backgrounds already picked for this post AND
@@ -1328,7 +2166,7 @@ async def render_carousel(slides_content: list[dict], brand: str,
                         visuals_used["backgrounds"].append(bg)
                     html = generate_photo_data_slide(
                         slide["headline_gold"], slide["headline_white"], slide["bullets"],
-                        bg, logo_path, accent
+                        bg, logo_path, accent, archetype=archetype,
                     )
             elif slide_type == "cta":
                 if is_forza:
@@ -1338,7 +2176,7 @@ async def render_carousel(slides_content: list[dict], brand: str,
                 else:
                     html = generate_cta_slide(
                         slide["cta_text"], slide.get("brand_name", brand_cfg["name"]),
-                        logo_path, accent
+                        logo_path, accent, archetype=archetype,
                     )
             else:
                 # Should be unreachable now that _coerce normalises every type,

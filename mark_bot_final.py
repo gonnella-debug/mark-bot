@@ -1717,6 +1717,7 @@ async def render_carousel_images(content: dict, brand: str) -> tuple[list[bytes]
             "headline_bottom": lifted_bottom,
         }] + list(slides[1:])
     recent = _recent_visuals_for_brand(brand, days=7)
+    archetype = (content.get("archetype") or "institutional")
     last_exc: Exception | None = None
     for attempt in range(3):
         try:
@@ -1725,6 +1726,7 @@ async def render_carousel_images(content: dict, brand: str) -> tuple[list[bytes]
                     slides, brand,
                     exclude_backgrounds=recent["backgrounds"],
                     exclude_forza_variants=recent["forza_cover_variants"],
+                    archetype=archetype,
                 ),
                 timeout=180,
             )
@@ -1747,10 +1749,12 @@ async def render_static_image(content: dict, brand: str) -> bytes | None:
     if not slides:
         return None
     recent = _recent_visuals_for_brand(brand, days=7)
+    archetype = (content.get("archetype") or "institutional")
     imgs, _ = await render_carousel(
         slides[:1], brand,
         exclude_backgrounds=recent["backgrounds"],
         exclude_forza_variants=recent["forza_cover_variants"],
+        archetype=archetype,
     )
     return imgs[0] if imgs else None
 
