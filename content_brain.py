@@ -7,6 +7,7 @@ import os
 import json
 import logging
 import httpx
+from anthropic_limiter import anthropic_post, AnthropicBudgetExceeded
 from datetime import datetime, timezone, timedelta
 
 log = logging.getLogger(__name__)
@@ -498,8 +499,8 @@ Return ONLY the JSON structure described in your instructions."""
             request_body["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
 
         async with httpx.AsyncClient(timeout=90) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
+            resp = await anthropic_post(
+                client,
                 headers={
                     "x-api-key": CLAUDE_API_KEY,
                     "anthropic-version": "2023-06-01",
@@ -558,8 +559,8 @@ Return ONLY the JSON structure described in your instructions."""
                 }
                 if use_web_search:
                     retry_body["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
-                retry_resp = await client.post(
-                    "https://api.anthropic.com/v1/messages",
+                retry_resp = await anthropic_post(
+                    client,
                     headers={
                         "x-api-key": CLAUDE_API_KEY,
                         "anthropic-version": "2023-06-01",
@@ -625,8 +626,8 @@ Return ONLY the JSON structure described in your instructions."""
                 }
                 if use_web_search:
                     fix_body["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
-                fix_resp = await client.post(
-                    "https://api.anthropic.com/v1/messages",
+                fix_resp = await anthropic_post(
+                    client,
                     headers={
                         "x-api-key": CLAUDE_API_KEY,
                         "anthropic-version": "2023-06-01",
@@ -731,8 +732,8 @@ OUTPUT ALL FOUR BRANDS. Do not skip Forza."""
 
     try:
         async with httpx.AsyncClient(timeout=90) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
+            resp = await anthropic_post(
+                client,
                 headers={
                     "x-api-key": CLAUDE_API_KEY,
                     "anthropic-version": "2023-06-01",
