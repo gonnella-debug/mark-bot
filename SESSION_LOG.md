@@ -5,6 +5,81 @@
 
 ---
 
+## 2026-05-08 · 4b839c0 · Phase 0 ship — committed, deployed, verified
+
+### Deploy actions
+- **Preflight:** `python3.12 -c "import ast; ..."` against `renderer.py / validator.py / mark_bot_final.py / content_brain.py` — AST parse OK across all four. Local module-import fails on missing `sentry_sdk` — local-dev gap only; Docker on Railway has all deps.
+- **Commit:** `4b839c0 mark: Phase 0 renderer containment — 1080×1350 canvas, kill AI-brain, drop Cinzel/Cormorant/Montserrat default`. Five files, +890/−100 lines. Added `SESSION_LOG.md` and `RENDERER_FORENSIC_AUDIT.md` to the repo.
+- **Push:** `git push origin main` → `00a1c5e..4b839c0  main -> main` at 11:54 UTC. Triggered Railway auto-deploy.
+- **Strategy docs left untracked** (`MARK_REBUILD_PLAN.md`, `creative-system/`) — forward-looking rebuild planning; user has explicitly deferred the rebuild decision so these stay uncommitted for now.
+
+### /health verification
+- Production URL: `https://mark-bot-production.up.railway.app/health`.
+- Polled every 15s for 3 minutes from 11:55:14 → 11:58:11 UTC (12 polls, well past the typical Railway redeploy window of 60–120s for a Python image).
+- Result: **12/12 polls returned HTTP 200**, body `{"status":"ok","service":"mark","timestamp":"…"}`.
+- Response timestamps moved on every poll (process is alive and serving). Railway uses zero-downtime rolling deploys, so the new container came up before the old went down — `/health` never broke.
+- No `/version` endpoint exists, so the strongest behavioural evidence the new code is live is "uninterrupted 200 with moving timestamps across the deploy window." Future Phase-0.1 work should add `/version` returning the git SHA so deploy verification has a hard signal.
+
+### Review-only sample renders
+- Generated locally using the renderer module from the deployed git ref (`4b839c0`). Local code is byte-identical to deployed code — no separate render pipeline.
+- Saved to `/tmp/mark_phase0_review/` (8 PNGs total).
+- **No `/admin/test_channels` call**, no `/generate` call, no Telegram callback exercised, no Drive upload, no Meta/LinkedIn/Buffer API touched. The user's "do not auto-post anything" constraint was treated as forbidding any side-effect on external systems — the IG container + LinkedIn doc upload paths in `/admin/test_channels` (which create real but unpublished media) were specifically not invoked.
+
+### Phase 0 invariant audit (17/17 passed)
+
+| Brand | Check | Result |
+| ----- | ----- | ------ |
+| FORZA | `width: 1080px; height: 1350px` declared | ✅ |
+| FORZA | no `height: 1080px` anywhere | ✅ |
+| FORZA | no Cinzel typeface | ✅ |
+| FORZA | no Cormorant typeface | ✅ |
+| FORZA | no Montserrat default | ✅ |
+| FORZA | no `FORZA OS` blueprint hex hero text | ✅ |
+| FORZA | no orbital / coreglow halo | ✅ |
+| FORZA | `validate_render_html(cover, "forza")` passes | ✅ |
+| FORZA | `validate_render_html(data, "forza")` passes | ✅ |
+| HOLDINGS | `width: 1080px; height: 1350px` declared | ✅ |
+| HOLDINGS | no `height: 1080px` anywhere | ✅ |
+| HOLDINGS | no Montserrat | ✅ |
+| HOLDINGS | no `<div class="stripe-bg">` in data slide | ✅ |
+| HOLDINGS | no `<div class="streak1">` in data slide | ✅ |
+| HOLDINGS | data slide CSS contains `text-align: left` | ✅ |
+| HOLDINGS | `validate_render_html(cover, "nucassa_holdings")` passes | ✅ |
+| HOLDINGS | `validate_render_html(data, "nucassa_holdings")` passes | ✅ |
+
+### Sample render dimensions (PIL-confirmed)
+
+```
+forza_slide_1.png    1080×1350    1,173,514 bytes   (cover, flow variant)
+forza_slide_2.png    1080×1350       33,877 bytes   (data slide)
+forza_slide_3.png    1080×1350       45,548 bytes   (insight slide)
+forza_slide_4.png    1080×1350       38,798 bytes   (CTA)
+
+holdings_slide_1.png 1080×1350    1,222,626 bytes   (cover with photo bg)
+holdings_slide_2.png 1080×1350       40,279 bytes   (data slide)
+holdings_slide_3.png 1080×1350       50,153 bytes   (insight slide)
+holdings_slide_4.png 1080×1350       39,880 bytes   (CTA)
+```
+
+Carousel-level composition validator: **0 warnings on each carousel** — the all-centered regression is no longer triggered (institutional data + insight are now left-aligned, breaking the previous flat rhythm).
+
+### Visual notes from sample inspection
+- Forza data slide reads as Linear/Stripe-press-adjacent: warm-black canvas, left-aligned `LIVE TELEMETRY / INBOUND INFRASTRUCTURE` headline in Inter sans, square bullets, sentence-case body, F-mark bottom-right at low opacity. Materially less template-like than the pre-patch output.
+- Forza cover (flow variant selected by random pick): retained `INPUT → ENGINE → OUTPUT` flow diagram, but Cinzel/Cormorant + drop-shadow halos + glowing-dot pipe accent are gone.
+- Holdings data slide identical structural lift: flat warm-black, left-aligned, sentence-case bullets, no diagonal stripes or light streaks. Reads as institutional brief, not Instagram brokerage.
+- Holdings cover still uses the legacy `templates/backgrounds/` photo library (Burj-style imagery). Out of Phase 0 scope; flagged for the future composition-engine rebuild.
+
+### Status
+Phase 0 is **shipped and verified**. Production is serving git ref `4b839c0`. No posts have been triggered. Review samples are at `/tmp/mark_phase0_review/`.
+
+### Next decision (deferred to GG)
+- **Option A — Observe.** Run real carousels through the existing Telegram review queue at `/generate`. If the visual lift translates to better review-pass rate and engagement, defer the deeper rebuild and iterate on smaller fixes (palette separation, photo-library curation, schema cleanup).
+- **Option B — Composition-engine rebuild.** Proceed per `RENDERER_FORENSIC_AUDIT.md` Part IV and `MARK_REBUILD_PLAN.md` (composition primitives + visual layer stack + 12-column grid + named grade pipeline + type-role system + editorial primitives + a real validator across all dimensions).
+
+User has explicitly paused on this decision. Phase 0 is the safe stopping point.
+
+---
+
 ## 2026-05-08 · uncommitted · Phase 0 — renderer emergency containment
 
 ### Scope
