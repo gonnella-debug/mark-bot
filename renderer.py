@@ -157,12 +157,16 @@ def pick_background(topic: str = "", category: str = "", exclude: list[str] | No
 # ── HTML TEMPLATE GENERATORS ──
 
 def _base_css():
-    """Shared CSS reset + font import."""
+    """Shared CSS reset + font import.
+    Phase 0 containment (2026-05-08): canvas changed 1080×1080 → 1080×1350 to
+    ship in the IG-correct 4:5 aspect; default font changed Montserrat → Inter
+    so non-Forza/non-editorial paths no longer inherit the Canva-tier face.
+    Brand-specific archetypes that need other faces still declare them locally."""
     return """
-    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700;800;900&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { width: 1080px; height: 1080px; overflow: hidden; font-family: 'Montserrat', sans-serif; background: #0a0a0a; }
-    .slide { width: 1080px; height: 1080px; position: relative; overflow: hidden; }
+    body { width: 1080px; height: 1350px; overflow: hidden; font-family: 'Inter', system-ui, sans-serif; background: #0a0a0a; }
+    .slide { width: 1080px; height: 1350px; position: relative; overflow: hidden; }
     """
 
 def _stripe_bg_css():
@@ -183,7 +187,15 @@ def _stripe_bg_css():
     """
 
 def _stripe_bg_html():
-    return '<div class="stripe-bg"></div><div class="streak1"></div><div class="streak2"></div>'
+    """Phase 0 containment (2026-05-08): the diagonal stripe + two light-streak
+    divs were rendered on every institutional data/insight slide, content-blind.
+    The pattern was the dominant brand signal across the entire feed and made
+    every slide look like the same template. Returns empty so callers no
+    longer inject the three divs. The CSS in _stripe_bg_css() is left in place
+    (orphaned selectors, no harm) for backwards compat with any caller that
+    still references the class names. Restore only after the overlay is moved
+    to a per-archetype, per-content texture system."""
+    return ''
 
 
 # ── Archetype system (Phase 1) ──────────────────────────────────────
@@ -528,7 +540,7 @@ def _cta_editorial(cta_text, brand_name, logo_path, accent_color):
     {_base_css()}
     body {{ font-family: 'Inter', sans-serif; background: #0a0a0a; }}
     .slide {{
-        width: 1080px; height: 1080px; position: relative;
+        width: 1080px; height: 1350px; position: relative;
         display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 50px;
     }}
     .rule-top {{ width: 80px; height: 1px; background: {accent_color}; }}
@@ -973,8 +985,21 @@ def _cta_dashboard(cta_text, brand_name, logo_path, accent_color):
 def _forza_cover_blueprint(headline_top: str, headline_gold: str, headline_bottom: str,
                             logo_path: str, accent_color: str = "#C5A86C",
                             bg_image: str = "") -> str:
-    """Forza cover variant: Blueprint — central hex core + 4 labelled infrastructure
-    nodes on a gridded ink background. Original Forza cover design."""
+    """Forza cover variant: Blueprint — DISABLED 2026-05-08 (Phase 0 containment).
+    The original blueprint hero (hex core + orbital rings + 4 outer nodes) read
+    as the canonical AI-brain visual that the brand spec explicitly forbids.
+    Forwards to _forza_cover_monolith so any direct caller still gets a valid
+    Forza cover. Removed from FORZA_COVER_VARIANTS so pick_forza_cover_variant
+    will not select it."""
+    return _forza_cover_monolith(headline_top, headline_gold, headline_bottom,
+                                  logo_path, accent_color, bg_image)
+
+
+def _forza_cover_blueprint__disabled(headline_top: str, headline_gold: str, headline_bottom: str,
+                            logo_path: str, accent_color: str = "#C5A86C",
+                            bg_image: str = "") -> str:
+    """ARCHIVED original implementation. Do not call. Restored only after the
+    hero is rebuilt without the orbital rings / glowing core / four-pillar nodes."""
     photo_uri = _file_to_data_uri(bg_image) if bg_image else ""
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -1212,11 +1237,16 @@ def _forza_cover_blueprint(headline_top: str, headline_gold: str, headline_botto
 # What VARIES: hero composition, background texture, headline position.
 
 def _forza_common_head(accent_color: str) -> str:
+    """Phase 0 containment (2026-05-08): Cinzel + Cormorant Garamond removed.
+    Both faces are textbook "luxury-template" choices that read against Forza's
+    operations register (Forza is Palantir / pit-wall, not Sotheby's). Replaced
+    with Inter + JetBrains Mono — neutral institutional sans + tabular mono.
+    Drop-shadow + italic-em luxury moves removed from .headline."""
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
     {_base_css()}
-    body {{ background: #0d0906; font-family: 'Cormorant Garamond', serif; }}
+    body {{ background: #0d0906; font-family: 'Inter', system-ui, sans-serif; }}
     .corner-tl, .corner-tr, .corner-bl, .corner-br {{
         position: absolute; width: 38px; height: 38px; z-index: 6;
         border-color: {accent_color};
@@ -1232,19 +1262,19 @@ def _forza_common_head(accent_color: str) -> str:
     .brandmark {{ display: flex; align-items: center; gap: 16px; }}
     .brandmark svg {{ width: 50px; height: 56px; }}
     .brandmark .wm {{
-        font-family: 'Cinzel', serif; font-weight: 700; color: #f5ecd6;
+        font-family: 'Inter', sans-serif; font-weight: 700; color: #f5ecd6;
         letter-spacing: 9px; font-size: 19px;
     }}
     .tagline {{
-        font-family: 'Cinzel', serif; font-size: 12px; color: {accent_color};
-        letter-spacing: 6px; text-transform: uppercase; font-weight: 500;
+        font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {accent_color};
+        letter-spacing: 4px; text-transform: uppercase; font-weight: 500;
         display: flex; align-items: center; gap: 14px;
     }}
     .tagline::before {{ content: ''; width: 38px; height: 1px; background: {accent_color}; opacity: .7; }}
     .page-no {{
         position: absolute; top: 175px; left: 90px; z-index: 8;
-        font-family: 'Cinzel', serif; color: {accent_color};
-        font-size: 13px; letter-spacing: 5px; font-weight: 500;
+        font-family: 'JetBrains Mono', monospace; color: {accent_color};
+        font-size: 13px; letter-spacing: 4px; font-weight: 500;
     }}
     .page-no .dim {{ color: #5a5347; }}
     .footer {{
@@ -1252,38 +1282,37 @@ def _forza_common_head(accent_color: str) -> str:
         display: flex; justify-content: space-between; align-items: flex-end; z-index: 7;
     }}
     .footer-l {{
-        font-family: 'Cinzel', serif; font-weight: 700; color: {accent_color};
-        letter-spacing: 11px; font-size: 16px;
+        font-family: 'Inter', sans-serif; font-weight: 700; color: {accent_color};
+        letter-spacing: 8px; font-size: 16px;
     }}
     .footer-r {{
         text-align: right;
-        font-family: 'Inter', sans-serif; font-weight: 500;
-        font-size: 11px; letter-spacing: 3px; color: #8a8275;
+        font-family: 'JetBrains Mono', monospace; font-weight: 500;
+        font-size: 11px; letter-spacing: 2px; color: #8a8275;
         text-transform: uppercase;
     }}
-    .footer-r .domain {{ color: #d8cfb8; font-weight: 600; letter-spacing: 4px; font-size: 12px; }}
+    .footer-r .domain {{ color: #d8cfb8; font-weight: 600; letter-spacing: 3px; font-size: 12px; }}
     .swipe {{
         position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
         display: flex; gap: 6px; z-index: 7;
     }}
-    .swipe .dot {{ width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.18); }}
-    .swipe .dot.active {{ background: {accent_color}; width: 18px; border-radius: 4px; }}
+    .swipe .dot {{ width: 6px; height: 6px; background: rgba(255,255,255,0.18); }}
+    .swipe .dot.active {{ background: {accent_color}; width: 18px; }}
     .headline {{
-        font-family: 'Cormorant Garamond', serif; font-weight: 600;
-        line-height: 1.02; color: #f7f3ea;
-        letter-spacing: -1.2px;
-        text-shadow: 0 4px 40px rgba(0,0,0,0.6);
+        font-family: 'Inter', sans-serif; font-weight: 700;
+        line-height: 1.04; color: #f7f3ea;
+        letter-spacing: -1.5px;
     }}
-    .headline em {{ color: {accent_color}; font-style: italic; font-weight: 500; }}
+    .headline em {{ color: {accent_color}; font-style: normal; font-weight: 700; }}
     .kicker {{
-        font-family: 'Cinzel', serif; font-size: 15px; font-weight: 600;
-        color: {accent_color}; letter-spacing: 9px; text-transform: uppercase;
+        font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 500;
+        color: {accent_color}; letter-spacing: 4px; text-transform: uppercase;
         display: inline-flex; align-items: center; gap: 18px;
     }}
     .kicker::before {{ content: ''; width: 26px; height: 1px; background: {accent_color}; }}
     .sub {{
-        font-family: 'Cormorant Garamond', serif; font-weight: 400;
-        font-style: italic; color: #c8bfae; line-height: 1.35;
+        font-family: 'Inter', sans-serif; font-weight: 400;
+        font-style: normal; color: #c8bfae; line-height: 1.4;
     }}"""
 
 
@@ -1346,7 +1375,7 @@ def _forza_cover_monolith(headline_top: str, headline_gold: str, headline_bottom
     .monolith {{
         position: absolute; top: 90px; right: 0; bottom: 90px; width: 520px;
         z-index: 3;
-        filter: drop-shadow(-30px 0 80px rgba(230,195,120,0.25));
+        /* Phase 0: 80px gold drop-shadow halo removed. Reads as Midjourney glow. */
     }}
     .monolith svg {{ width: 100%; height: 100%; }}
     .content {{
@@ -1410,7 +1439,7 @@ def _forza_cover_monolith(headline_top: str, headline_gold: str, headline_bottom
               <line x1="20" y1="680" x2="50" y2="680"/>
             </g>
             <!-- Floor label strip -->
-            <g font-family="Cinzel, serif" font-size="9" letter-spacing="3" fill="#d8cfb8" font-weight="600">
+            <g font-family="Inter, sans-serif" font-size="9" letter-spacing="3" fill="#d8cfb8" font-weight="600">
               <text x="20" y="137">L6 · REVENUE</text>
               <text x="20" y="247">L5 · OPERATIONS</text>
               <text x="20" y="357">L4 · BRAND</text>
@@ -1466,21 +1495,20 @@ def _forza_cover_flow(headline_top: str, headline_gold: str, headline_bottom: st
     }}
     .node {{
         width: 220px; height: 180px;
-        background: linear-gradient(160deg, #2d2216 0%, #1a130b 100%);
+        background: #1a130b;
         border: 1.5px solid {accent_color};
-        border-radius: 4px;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
-        box-shadow: 0 8px 40px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(230,195,120,0.15);
         position: relative;
+        /* Phase 0: 40px black drop-shadow + inset gold halo removed. */
     }}
     .node .idx {{
         position: absolute; top: 12px; left: 16px;
-        font-family: 'Cinzel', serif; font-size: 11px; font-weight: 700;
+        font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;
         color: {accent_color}; letter-spacing: 3px;
     }}
     .node .label {{
-        font-family: 'Cinzel', serif; font-size: 18px; font-weight: 700;
-        color: #f5ecd6; letter-spacing: 6px; margin-bottom: 10px;
+        font-family: 'Inter', sans-serif; font-size: 18px; font-weight: 700;
+        color: #f5ecd6; letter-spacing: 4px; margin-bottom: 10px;
     }}
     .node .desc {{
         font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 500;
@@ -1498,9 +1526,9 @@ def _forza_cover_flow(headline_top: str, headline_gold: str, headline_bottom: st
         width: 0; height: 0; border: 8px solid transparent; border-left-color: {accent_color};
     }}
     .pipe::after {{
-        content: ''; position: absolute; left: 20%; top: -12px; width: 8px; height: 8px;
-        border-radius: 50%; background: {accent_color};
-        box-shadow: 0 0 12px {accent_color};
+        content: ''; position: absolute; left: 20%; top: -10px; width: 6px; height: 6px;
+        background: {accent_color};
+        /* Phase 0: round dot + 12px gold glow removed. Square indicator, no halo. */
     }}
     </style></head><body>
     <div class="slide">
@@ -1576,8 +1604,8 @@ def _forza_cover_topology(headline_top: str, headline_gold: str, headline_bottom
     .summit {{
         position: absolute; top: 70px; right: 70px;
         z-index: 4;
-        font-family: 'Cinzel', serif; color: {accent_color};
-        font-size: 10px; letter-spacing: 4px; font-weight: 600;
+        font-family: 'JetBrains Mono', monospace; color: {accent_color};
+        font-size: 10px; letter-spacing: 3px; font-weight: 500;
         text-align: right; opacity: 0.7;
     }}
     .summit .big {{
@@ -1603,9 +1631,15 @@ def _forza_cover_topology(headline_top: str, headline_gold: str, headline_bottom
 
 # ── FORZA COVER: dispatcher + variant picker ─────────────────────────────────
 FORZA_COVER_VARIANTS = {
-    "blueprint": _forza_cover_blueprint,
+    # Phase 0 containment (2026-05-08): "blueprint" disabled — its hero SVG was
+    # a glowing gold hex with four orbital rings + four nodes labelled
+    # REVENUE / OPS / BRAND / PEOPLE. That is the canonical AI-brain visual and
+    # is exactly the off-brand register the audit flagged. The blueprint
+    # function still exists below but routes to monolith if explicitly
+    # requested. Restore only after the variant is rebuilt with no orbital /
+    # halo / hex-core decoration.
     "monolith": _forza_cover_monolith,
-    "flow": _forza_cover_flow,
+    "flow":     _forza_cover_flow,
     "topology": _forza_cover_topology,
 }
 
@@ -1635,47 +1669,43 @@ def generate_forza_cover_slide(headline_top: str, headline_gold: str, headline_b
 
 
 def generate_forza_cta_slide(cta_text: str, accent_color: str = "#C5A86C") -> str:
-    """Forza CTA — ink bg, F-chevron mark, wordmark, single CTA line, gold arc.
-    Never uses logo_forza.png (which has the wordmark baked in and would duplicate)."""
+    """Forza CTA — ink bg, F-chevron mark, wordmark, single CTA line.
+    Never uses logo_forza.png (which has the wordmark baked in and would duplicate).
+    Phase 0 containment (2026-05-08): Cinzel + Cormorant + radial gold-arc
+    halo removed. Replaced with Inter + JetBrains Mono on a flat ink background."""
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
     {_base_css()}
-    body {{ background: #0a0a0a; font-family: 'Cormorant Garamond', serif; }}
+    body {{ background: #0a0a0a; font-family: 'Inter', sans-serif; }}
     .slide {{
-        background: radial-gradient(ellipse at 50% 20%, #1a1610 0%, #0a0a0a 55%, #050503 100%);
+        background: #0a0a0a;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         gap: 36px; padding: 0 80px;
     }}
-    .gold-arc {{
-        position: absolute; top: -25%; left: -25%;
-        width: 150%; height: 150%;
-        background: radial-gradient(circle, rgba(197,168,108,0.08) 0%, transparent 50%);
-        pointer-events: none;
-    }}
     .mark svg {{ width: 120px; height: 132px; }}
     .wordmark {{
-        font-family: 'Cinzel', serif; font-weight: 700; color: {accent_color};
-        letter-spacing: 16px; font-size: 38px; margin-top: -6px;
+        font-family: 'Inter', sans-serif; font-weight: 700; color: {accent_color};
+        letter-spacing: 12px; font-size: 38px; margin-top: -6px;
     }}
     .tagline {{
-        font-family: 'Cinzel', serif; font-weight: 500; color: #6e6a62;
-        letter-spacing: 6px; font-size: 14px; text-transform: uppercase; margin-top: 4px;
+        font-family: 'JetBrains Mono', monospace; font-weight: 500; color: #6e6a62;
+        letter-spacing: 4px; font-size: 13px; text-transform: uppercase; margin-top: 4px;
     }}
-    .gold-line {{ width: 64px; height: 2px; background: {accent_color}; }}
+    .gold-line {{ width: 64px; height: 1px; background: {accent_color}; }}
     .cta {{
-        font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 500;
-        font-size: 48px; line-height: 1.25; color: #f7f3ea;
+        font-family: 'Inter', sans-serif; font-style: normal; font-weight: 500;
+        font-size: 42px; line-height: 1.3; color: #f7f3ea;
         text-align: center; max-width: 820px; margin-top: 8px;
+        letter-spacing: -0.6px;
     }}
-    .cta .hl {{ color: {accent_color}; font-style: normal; font-weight: 600; }}
+    .cta .hl {{ color: {accent_color}; font-style: normal; font-weight: 700; }}
     .site {{
-        font-family: 'Cinzel', serif; font-weight: 600; color: {accent_color};
-        letter-spacing: 6px; font-size: 18px; text-transform: uppercase; margin-top: 24px;
+        font-family: 'JetBrains Mono', monospace; font-weight: 500; color: {accent_color};
+        letter-spacing: 4px; font-size: 16px; text-transform: uppercase; margin-top: 24px;
     }}
     </style></head><body>
     <div class="slide">
-        <div class="gold-arc"></div>
         <div class="mark">
           <svg viewBox="0 0 100 110" xmlns="http://www.w3.org/2000/svg">
             <defs>
@@ -1781,35 +1811,39 @@ def generate_data_slide(headline_gold: str, headline_white: str, bullets: list[s
         f'<div class="stat-text"><span class="bullet">&bull;</span> {b}</div>'
         for b in bullets
     )
+    # Phase 0 (2026-05-08): institutional data slide moved from centered to
+    # left-aligned. The centered-everything composition was the dominant
+    # template signal across all institutional output. Cover + CTA stay
+    # centered; body slides now pull to the canvas edge.
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
     {_base_css()}
     {_stripe_bg_css()}
     .content {{
         position: relative; z-index: 10;
-        padding: 80px 70px;
+        padding: 110px 90px;
         height: 100%; display: flex; flex-direction: column; justify-content: center;
-        text-align: center;
+        text-align: left;
     }}
     .headline {{
-        font-size: 42px; font-weight: 900; color: {accent_color};
+        font-size: 42px; font-weight: 800; color: {accent_color};
         text-transform: uppercase; letter-spacing: 1px; line-height: 1.15;
-        margin-bottom: 15px;
+        margin-bottom: 12px;
     }}
     .headline-white {{
-        font-size: 42px; font-weight: 900; color: #ffffff;
+        font-size: 42px; font-weight: 800; color: #ffffff;
         text-transform: uppercase; letter-spacing: 1px; line-height: 1.15;
         margin-bottom: 55px;
     }}
-    .stats {{ display: flex; flex-direction: column; gap: 35px; }}
+    .stats {{ display: flex; flex-direction: column; gap: 30px; }}
     .stat-text {{
-        font-size: 28px; font-weight: 700; color: #ffffff;
-        text-transform: uppercase; letter-spacing: 1.5px; line-height: 1.4;
+        font-size: 26px; font-weight: 600; color: #ffffff;
+        text-transform: none; letter-spacing: 0; line-height: 1.45;
     }}
-    .bullet {{ color: {accent_color}; font-weight: 700; }}
-    .stat-highlight {{ color: {accent_color}; font-weight: 800; }}
+    .bullet {{ color: {accent_color}; font-weight: 700; margin-right: 8px; }}
+    .stat-highlight {{ color: {accent_color}; font-weight: 700; }}
     .logo-bottom {{
-        position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
-        width: 65px; opacity: 0.5;
+        position: absolute; bottom: 40px; right: 70px;
+        width: 60px; opacity: 0.45;
     }}
     </style></head><body>
     <div class="slide">
@@ -1842,37 +1876,38 @@ def generate_insight_slide(headline_gold: str, headline_white: str, bullets: lis
         f'<div class="stat-text"><span class="bullet">&bull;</span> {b}</div>'
         for b in bullets
     )
+    # Phase 0 (2026-05-08): institutional insight slide left-aligned.
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
     {_base_css()}
     {_stripe_bg_css()}
     .content {{
         position: relative; z-index: 10;
-        padding: 80px 70px;
+        padding: 110px 90px;
         height: 100%; display: flex; flex-direction: column; justify-content: center;
-        text-align: center;
+        text-align: left;
     }}
     .headline {{
-        font-size: 40px; font-weight: 900; color: {accent_color};
+        font-size: 40px; font-weight: 800; color: {accent_color};
         text-transform: uppercase; letter-spacing: 1px; line-height: 1.15;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
     }}
     .headline-white {{
-        font-size: 40px; font-weight: 900; color: #ffffff;
+        font-size: 40px; font-weight: 800; color: #ffffff;
         text-transform: uppercase; letter-spacing: 1px; line-height: 1.15;
         margin-bottom: 45px;
     }}
-    .stats {{ display: flex; flex-direction: column; gap: 28px; margin-bottom: 40px; }}
+    .stats {{ display: flex; flex-direction: column; gap: 24px; margin-bottom: 40px; }}
     .stat-text {{
-        font-size: 26px; font-weight: 700; color: #ffffff;
-        text-transform: uppercase; letter-spacing: 1.5px; line-height: 1.4;
+        font-size: 24px; font-weight: 600; color: #ffffff;
+        text-transform: none; letter-spacing: 0; line-height: 1.45;
     }}
-    .bullet {{ color: {accent_color}; font-weight: 700; }}
-    .divider {{ width: 180px; height: 2px; background: linear-gradient(to right, transparent, {accent_color}, transparent); margin: 0 auto 35px; }}
-    .closing {{ font-size: 30px; font-weight: 900; color: #ffffff; text-transform: uppercase; letter-spacing: 2px; line-height: 1.4; }}
-    .closing-gold {{ font-size: 30px; font-weight: 900; color: {accent_color}; text-transform: uppercase; letter-spacing: 2px; line-height: 1.4; }}
+    .bullet {{ color: {accent_color}; font-weight: 700; margin-right: 8px; }}
+    .divider {{ width: 120px; height: 1px; background: {accent_color}; margin: 0 0 35px; }}
+    .closing {{ font-size: 28px; font-weight: 700; color: #ffffff; text-transform: none; letter-spacing: 0; line-height: 1.4; }}
+    .closing-gold {{ font-size: 28px; font-weight: 700; color: {accent_color}; text-transform: none; letter-spacing: 0; line-height: 1.4; }}
     .logo-bottom {{
-        position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
-        width: 65px; opacity: 0.5;
+        position: absolute; bottom: 40px; right: 70px;
+        width: 60px; opacity: 0.45;
     }}
     </style></head><body>
     <div class="slide">
@@ -1967,7 +2002,7 @@ def generate_cta_slide(cta_text: str, brand_name: str, logo_path: str,
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
     {_base_css()}
     .slide {{
-        width: 1080px; height: 1080px; position: relative;
+        width: 1080px; height: 1350px; position: relative;
         display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 40px;
     }}
     .cta-text {{
@@ -1979,7 +2014,7 @@ def generate_cta_slide(cta_text: str, brand_name: str, logo_path: str,
     .brand-name {{
         font-size: 28px; font-weight: 800; color: {accent_color};
         text-transform: uppercase; letter-spacing: 8px; margin-top: -15px;
-        font-family: 'Montserrat', sans-serif;
+        font-family: 'Inter', sans-serif;
     }}
     </style></head><body>
     <div class="slide">
@@ -2002,7 +2037,7 @@ async def render_html_to_png(html_content: str, output_path: str) -> bool:
 
         async with async_playwright() as p:
             browser = await p.chromium.launch()
-            page = await browser.new_page(viewport={"width": 1080, "height": 1080})
+            page = await browser.new_page(viewport={"width": 1080, "height": 1350})
             await page.goto(f"file://{tmp_path}", wait_until="networkidle")
             await page.wait_for_timeout(500)
             await page.screenshot(path=output_path, type="png")
@@ -2057,12 +2092,15 @@ async def render_carousel(slides_content: list[dict], brand: str,
     images = []
     # Track visuals picked so the caller can log them for 7-day dedup.
     visuals_used: dict = {"backgrounds": [], "forza_cover_variant": None}
+    # Phase 0 (2026-05-08): collect per-slide HTML for the carousel-level
+    # composition validator (e.g. all-slides-centered regression).
+    slide_html_list: list[str] = []
 
     import tempfile
 
     async with async_playwright() as p:
         browser = await p.chromium.launch()
-        page = await browser.new_page(viewport={"width": 1080, "height": 1080})
+        page = await browser.new_page(viewport={"width": 1080, "height": 1350})
 
         def _coerce(slide: dict, i: int, total: int) -> dict:
             """Map the older {headline, subtext, stats|points, cta_line} schema into the renderer's expected fields."""
@@ -2185,6 +2223,24 @@ async def render_carousel(slides_content: list[dict], brand: str,
                 images.append(b"")
                 continue
 
+            # Phase 0 containment (2026-05-08): pre-screenshot validation.
+            # Hard-fail if the HTML regresses to 1080×1080, contains the
+            # disabled Forza AI-brain blueprint hero, mounts Montserrat
+            # globally, or (Forza) loads Cinzel / Cormorant. Refusing to
+            # screenshot is preferable to shipping a regressed asset.
+            try:
+                from validator import validate_render_html, RenderValidationError
+                _failures = validate_render_html(html, brand)
+                if _failures:
+                    msg = "; ".join(_failures)
+                    log.error(f"[render] slide {i+1} validation failed for brand={brand}: {msg}")
+                    raise RenderValidationError(
+                        f"slide {i+1}/{len(slides_content)} ({slide_type}) failed render validation: {msg}"
+                    )
+            except ImportError:
+                log.warning("[render] validator import failed; proceeding without validation")
+            slide_html_list.append(html)
+
             # Write to temp file so file:// URLs work for images
             with tempfile.NamedTemporaryFile(mode='w', suffix='.html', dir=str(TEMPLATE_DIR), delete=False) as f:
                 f.write(html)
@@ -2205,5 +2261,16 @@ async def render_carousel(slides_content: list[dict], brand: str,
             log.info(f"[render] slide {i+1}/{len(slides_content)} type={slide_type} bytes={len(img_bytes)}")
 
         await browser.close()
+
+    # Phase 0 carousel-level composition validation (warn-only — does not
+    # discard images, but logs the regression so it surfaces in review).
+    try:
+        from validator import validate_carousel_composition
+        carousel_warnings = validate_carousel_composition(slide_html_list)
+        for w in carousel_warnings:
+            log.warning(f"[render] carousel composition warning brand={brand}: {w}")
+        visuals_used["composition_warnings"] = carousel_warnings
+    except ImportError:
+        pass
 
     return images, visuals_used
